@@ -562,8 +562,52 @@ def load_silhouette(path, img):
     ret, sil = cv.threshold(sil, 200, maxval=255, type=cv.THRESH_BINARY)
     return sil
 
+def load_body_template_contour(path):
+    gray = cv.imread(path, cv.IMREAD_GRAYSCALE)
+    bi = cv.threshold(gray, 200, 255, cv.THRESH_BINARY)
+    contour = find_largest_contour(bi)
+    return contour
+
 def int_tuple(vals):
     return tuple(int(v) for v in vals.flatten())
+
+from scipy import interpolate
+def split_fit(img, contour, npoint = 200):
+    x_ = np.arange(0, 2 * np.pi + np.pi / 4, 2 * np.pi / 8)
+    y_ = np.sin(x_)
+    tck_ = interpolate.splrep(x_, y_, s=0.01)
+
+    x = contour[:,0,0].astype(np.float64)
+    y = contour[:,0,1].astype(np.float64)
+    tck, u = interpolate.splprep([x, y], s=1)
+    xnew = np.arange(0, 1, 1.0 / float(npoint))
+    ynew = interpolate.splev(xnew, tck, der=0)
+    evl_contour = np.zeros((npoint,1,2), dtype=np.int32)
+    evl_contour[:, 0, 0] = ynew[0].astype(np.int32)
+    evl_contour[:, 0, 1] = ynew[1].astype(np.int32)
+    xp, yp = interpolate.splev(xnew, tck, der=1)
+    xpp, ypp = interpolate.splev(xnew, tck, der=2)
+    curvature = (xp * ypp - yp * xpp) / np.power(xp ** 2 + yp ** 2, 3 / 2)
+
+    # error = 0.1
+    # t = np.arange(x.shape[0])
+    # std = error * np.ones_like(x)
+    #
+    # fx = interpolate.UnivariateSpline(t, x, k=4, w=1 / np.sqrt(std))
+    # fy = interpolate.UnivariateSpline(t, y, k=4, w=1 / np.sqrt(std))
+    #
+    # x_new = fx(t)
+    # y_new = fy(t)
+    # evl_contour = np.zeros((x.shape[0],1,2), dtype=np.int32)
+    # evl_contour[:, 0, 0] = x_new.astype(np.int32)
+    # evl_contour[:, 0, 1] = y_new.astype(np.int32)
+    #
+    # dx = fx.derivative(1)(t)
+    # dxx = fx.derivative(2)(t)
+    # dy = fy.derivative(1)(t)
+    # dyy = fy.derivative(2)(t)
+    # curvature = (dx* dyy - dy* dxx) / np.power(dx** 2 + dy** 2, 3 / 2)
+    return evl_contour, curvature
 
 if __name__ == '__main__':
     OPENPOSE_MODEL_PATH = 'D:\Projects\Oh\\body_measure\openpose\models\\'
@@ -604,6 +648,35 @@ if __name__ == '__main__':
     keypoints_front, img_front_pose = openpose.forward(img_front , True)
     sil_front = load_silhouette(f'{SILHOUETTE_DIR}{FRONT_IMG}', img_front)
     contour_front = find_largest_contour(sil_front)
+
+    evl_contour, curvature = split_fit(sil_front, contour_front)
+    #cv.drawContours(img_front, [contour_front], -1, (0, 255, 255), thickness=4)
+    cv.drawContours(img_front, [evl_contour], -1, (255, 255, 0), thickness=2)
+    cmap = plt.get_cmap('jet')
+    print(f'curvature: {curvature.min()} - {curvature.max()}')
+    # gray_curvature = ((curvature - curvature.min())/(curvature.max() - curvature.min()))
+    # gray_curvature = -np.log(gray_curvature)
+    # gray_curvature = ((curvature - curvature.min())/(curvature.max() - curvature.min()))
+    # gray_curvature = ((1 - gray_curvature)*255).astype(np.uint8)
+    curvature = (curvature - curvature.min())/(curvature.max() - curvature.min())
+    #plt.hist(curvature, 255)
+    #plt.show()
+    #curvature = np.log(curvature + 0.00001)
+    #print(f'curvature: {curvature.min()} - {curvature.max()}')
+
+    #curvature = (curvature - curvature.min())/(curvature.max() - curvature.min())
+
+    #curvature = np.exp(curvature)
+    rgb_curvature = (cmap(curvature)*255)[:,:3].astype(np.uint8)
+    for i in range(len(evl_contour)):
+        pos = ((evl_contour[i,0,0]), (evl_contour[i,0,1]))
+        cvalue = tuple(rgb_curvature[i,:])
+        gray = curvature[i] * 255
+        #cv.drawMarker(img_front, pos, (int(cvalue[0]), int(cvalue[1]), int(cvalue[2])), thickness=10)
+        cv.drawMarker(img_front, pos, (int(gray), int(gray), int(gray)), thickness=10)
+
+    plt.imshow(img_front[:,:,::-1])
+    plt.show()
 
     img_side = cv.imread(f'{IMG_DIR}{SIDE_IMG}')
     keypoints_side, img_side_pose= openpose.forward(img_side, True)
@@ -681,7 +754,6 @@ if __name__ == '__main__':
     cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
     cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
     cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=5)
-
 
     plt.subplot(121), plt.imshow(img_front[:,:,::-1])
     plt.subplot(122), plt.imshow(img_side[:,:,::-1])
