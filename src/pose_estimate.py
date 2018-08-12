@@ -251,7 +251,7 @@ def gen_fg_bg_masks(img, keypoints, bontwidths):
     return fg_mask, bg_mask
 
 
-def find_largest_contour(img_bi, app_type = cv.CHAIN_APPROX_TC89_L1):
+def find_largest_contour(img_bi, app_type=cv.CHAIN_APPROX_TC89_L1):
     cnt, contours, _ = cv.findContours(img_bi, cv.RETR_LIST, app_type)
     largest_cnt = 0
     largest_area = -1
@@ -282,17 +282,24 @@ def dst_point_segment(p0, p1, p):
     return np.norm(tmp)
 
 
-def closest_point_contour_points(contour, point):
-    cls_idx = 0
-    p = contour[cls_idx, :, :]
-    cls_dst = np.linalg.norm(p - point)
+def closest_point_contour(contour, point):
     diffs = contour - point
     dists = np.sqrt(np.sum(diffs ** 2, axis=2))
     return np.argmin(dists)
 
 
-import sys
+def closest_dst_point_contour(contour, point):
+    cls_idx = closest_point_contour(contour, point)
+    return np.linalg.norm(contour[cls_idx, 0, :] - point)
 
+
+def radius_search_on_contour(contour, point, radius):
+    diffs = contour - point
+    dists = np.sqrt(np.sum(diffs ** 2, axis=2))
+    mask = dists <= radius
+    return np.where(mask == True)[0], dists[mask]
+
+import sys
 
 def closest_point_contour_segments(contour, point):
     contour = contour.astype(np.float32)
@@ -312,12 +319,29 @@ def closest_point_contour_segments(contour, point):
     return cls_p
 
 
+def extract_contour_chains(contour, point_checker):
+    chains = []
+    N = contour.shape[0]
+    chain = []
+    for i in range(N):
+        if point_checker(contour[i, 0, :]):
+            chain.append(contour[i, 0, :])
+        else:
+            if len(chain) > 0:
+                chains.append(chain)
+            chain = []
+    return chains
+
 def closest_point_points(point, points):
     g0 = Point(point)
     g1 = MultiPoint(points)
     closest = nearest_points(g0, g1)[1]
     return np.array([closest.x, closest.y])
 
+def k_closest_point_points(point, points, k = 2):
+    dsts = linalg.norm(points - point, axis=1)
+    sorted_idxs = np.argsort(dsts)
+    return points[sorted_idxs[:k]]
 
 def isect_segment_contour(contour, p0, p1):
     a = LineString([p0, p1])
@@ -413,24 +437,30 @@ def estimate_side_hip_bdr_points(contour_side, keypoints_side):
 
 
 def estimate_front_waist_bdr_points(contour, keypoints):
-    axis = axis_front_view(keypoints)
-    axis_ortho = orthor_dir(axis)
+    axis_ortho = orthor_dir(axis_front_view(keypoints))
+
+    lshouder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
+    lelbow = keypoints[POSE_BODY_25_BODY_PART_IDXS['LElbow']][:2]
+    len = linalg.norm(lshouder - lelbow)
 
     midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
     neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
-    dir = neck - midhip
-    waist_center = midhip + 0.333 * dir
 
-    ref_length = neck_hip_length(keypoints)
-    s0 = waist_center + axis_ortho * 0.5 * ref_length
-    s1 = waist_center - axis_ortho * 0.5 * ref_length
+    dir = normalize(midhip - neck)
+    waist_center = neck + len * dir
 
-    ipoints = isect_segment_contour(contour, s0, s1)
+    contour_string = LineString([contour[i, 0, :] for i in range(contour.shape[0])])
 
-    waist_bdr_front_0 = closest_point_points(s0, ipoints)
-    waist_bdr_front_1 = closest_point_points(s1, ipoints)
+    end_point_0 = waist_center + len * axis_ortho
+    end_point_1 = waist_center - len * axis_ortho
+    horizon_line = LineString([end_point_0, end_point_1])
 
-    return np.vstack([waist_bdr_front_0, waist_bdr_front_1])
+    isect_points = horizon_line.intersection(contour_string)
+
+    p0 = closest_point_points(waist_center + 0.1 * len * axis_ortho, isect_points)
+    p1 = closest_point_points(waist_center - 0.1 * len * axis_ortho, isect_points)
+
+    return np.vstack([p0, p1])
 
 
 def estimate_side_waist_bdr_points(contour, keypoints):
@@ -457,22 +487,23 @@ def estimate_side_waist_bdr_points(contour, keypoints):
 def estimate_front_neck_brd_points(contour, keypoints):
     neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     nose = keypoints[POSE_BODY_25_BODY_PART_IDXS['Nose']][:2]
+    mid = 0.5 * (neck + nose)
+    radius = 0.5 * linalg.norm(neck - nose)
 
-    dir = nose - neck
-    len = np.linalg.norm(dir)
-    pos = neck + 0.4 * dir
+    def point_checker(p):
+        if p[1] > nose[1] and p[1] < neck[1]:
+            return True
+        else:
+            return False
 
-    dir = normalize(dir)
-    dir_ortho = orthor_dir(dir)
-    p0 = pos + dir_ortho * len
-    p1 = pos - dir_ortho * len
+    chains = extract_contour_chains(contour, point_checker)
 
-    ipoints = isect_segment_contour(contour, p0, p1)
+    chain_0 = LineString(chains[0])
+    chain_1 = LineString(chains[1])
 
-    neck_bdr_front_0 = closest_point_points(p0, ipoints)
-    neck_bdr_front_1 = closest_point_points(p1, ipoints)
+    p0, p1 = nearest_points(chain_0, chain_1)
 
-    return np.vstack([neck_bdr_front_0, neck_bdr_front_1])
+    return np.vstack([p0, p1])
 
 
 def estimate_side_neck_brd_points(contour, keypoints):
@@ -508,56 +539,123 @@ def estimate_side_inside_leg_bdr_points(contour, keypoints):
     return estimate_front_inside_leg_bdr_points(contour, keypoints)
 
 
-def estimate_front_shoulder_points(contour, keypoints):
-    neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
-    nose = keypoints[POSE_BODY_25_BODY_PART_IDXS['Nose']][:2]
-
-    dir = nose - neck
-    len = np.linalg.norm(dir)
-    pos = neck + 0.1 * dir
-
+def estimate_front_shoulder_points(contour, curvatures, keypoints):
     lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
     rshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
-    dir_ortho = lshoulder - rshoulder
-    p0 = pos + dir_ortho * len
-    p1 = pos - dir_ortho * len
 
-    ipoints = isect_segment_contour(contour, p0, p1)
+    radius = closest_dst_point_contour(contour, lshoulder)
 
-    p0 = closest_point_points(p0, ipoints)
-    p1 = closest_point_points(p1, ipoints)
+    lpoint_idxs, _ = radius_search_on_contour(contour, lshoulder, 1.5 * radius)
+    llandmark_idx = -1
+    largest_curv = 0
+    for idx in lpoint_idxs:
+        # contour landmark must be above left shoulder pose point (origin is at upper left corner)
+        if contour[idx, 0, 1] < lshoulder[1]:
+            # and have the highest curvature
+            if curvatures[idx] > largest_curv:
+                llandmark_idx = idx
+                largest_curv = curvatures[idx]
 
-    return np.vstack([p0, p1])
+        rpoint_idxs, _ = radius_search_on_contour(contour, rshoulder, 1.5 * radius)
+    rlandmark_idx = -1
+    largest_curv = 0
+    for idx in rpoint_idxs:
+        # contour landmark must be above shoulder pose point. (origin is at upper left corner)
+        if contour[idx, 0, 1] < rshoulder[1]:
+            # and have the highest curvature
+            if curvatures[idx] > largest_curv:
+                rlandmark_idx = idx
+                largest_curv = curvatures[idx]
+
+    return np.vstack([contour[llandmark_idx, 0, :], contour[rlandmark_idx, 0, :]])
 
 
-def estimate_front_arm(contour, keypoints):
-    lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
-    lwrist = keypoints[POSE_BODY_25_BODY_PART_IDXS['LWrist']][:2]
-    return np.vstack([lshoulder, lwrist])
-
-
-def estimate_side_arm(contour, keypoints):
-    return estimate_front_arm(contour, keypoints)
-
-
-def estimate_front_around_arm(contour, keypoints):
+def estimate_front_armpit(contour, curvatures, keypoints):
     lelbow = keypoints[POSE_BODY_25_BODY_PART_IDXS['LElbow']][:2]
 
     lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
-    lwrist = keypoints[POSE_BODY_25_BODY_PART_IDXS['LWrist']][:2]
-    dir = lshoulder - lwrist
-    len_ref = np.linalg.norm(dir)
-    dir = normalize(dir)
-    dir_ortho = orthor_dir(dir)
+    rshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
 
-    p0 = lelbow + 0.2 * len_ref * dir_ortho
-    p1 = lelbow - 0.2 * len_ref * dir_ortho
-    ipoints = isect_segment_contour(contour, p0, p1)
-    p0 = closest_point_points(p0, ipoints)
-    p1 = closest_point_points(p1, ipoints)
+    lhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
+    rhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['RHip']][:2]
+
+    radius = np.linalg.norm(lelbow - lshoulder)
+
+    lpoint_idxs, _ = radius_search_on_contour(contour, lshoulder, radius)
+    larmpit_idx = -1
+    largest_curv = 0
+    for idx in lpoint_idxs:
+        # armpit landmark must be somewhere beween hip and shoulder
+        if contour[idx, 0, 1] > lshoulder[1] and contour[idx, 0, 1] < lhip[1]:
+            # and have the highest curvature
+            if curvatures[idx] > largest_curv:
+                larmpit_idx = idx
+                largest_curv = curvatures[idx]
+
+    rpoint_idxs, _ = radius_search_on_contour(contour, rshoulder, radius)
+    rarmpit_idx = -1
+    largest_curv = 0
+    for idx in rpoint_idxs:
+        # armpit landmark must be somewhere beween hip and shoulder
+        if contour[idx, 0, 1] > rshoulder[1] and contour[idx, 0, 1] < rhip[1]:
+            # and have the highest curvature
+            if curvatures[idx] > largest_curv:
+                rarmpit_idx = idx
+                largest_curv = curvatures[idx]
+
+    return np.vstack([contour[larmpit_idx, 0, :], contour[rarmpit_idx, 0, :]])
+
+
+def estimate_front_elbow(contour, keypoints, left = False):
+    if left == True:
+        elbow = keypoints[POSE_BODY_25_BODY_PART_IDXS['LElbow']][:2]
+        shoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
+    else:
+        elbow = keypoints[POSE_BODY_25_BODY_PART_IDXS['RElbow']][:2]
+        shoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
+
+    dir = elbow - shoulder
+    len = linalg.norm(dir)
+    dir_orth = orthor_dir(normalize(dir))
+
+    contour_string = LineString([contour[i,0,:] for i in range(contour.shape[0])])
+    end_point_0 = elbow + 0.5 * len * dir_orth
+    end_point_1 = elbow - 0.5 * len * dir_orth
+    ortho_line = LineString([end_point_0, end_point_1])
+
+    isect_points = ortho_line.intersection(contour_string)
+    isect_points = np.array([(p.x, p.y) for p in isect_points])
+
+    p0, p1 = k_closest_point_points(elbow, isect_points)
 
     return np.vstack([p0, p1])
 
+#def estimate_side_arm(contour, keypoints):
+#    return estimate_front_arm(contour, keypoints)
+
+def estimate_front_wrist(contour, keypoints, left = False):
+    if left == True:
+        elbow = keypoints[POSE_BODY_25_BODY_PART_IDXS['LElbow']][:2]
+        wrist = keypoints[POSE_BODY_25_BODY_PART_IDXS['LWrist']][:2]
+    else:
+        elbow = keypoints[POSE_BODY_25_BODY_PART_IDXS['RElbow']][:2]
+        wrist = keypoints[POSE_BODY_25_BODY_PART_IDXS['RWrist']][:2]
+
+    dir = elbow - wrist
+    len = linalg.norm(dir)
+    dir_orth = orthor_dir(normalize(dir))
+
+    contour_string = LineString([contour[i,0,:] for i in range(contour.shape[0])])
+    end_point_0 = wrist + 0.3 * len * dir_orth
+    end_point_1 = wrist - 0.3 * len * dir_orth
+    ortho_line = LineString([end_point_0, end_point_1])
+
+    isect_points = ortho_line.intersection(contour_string)
+    isect_points = np.array([(p.x, p.y) for p in isect_points])
+
+    p0, p1 = k_closest_point_points(wrist, isect_points)
+
+    return np.vstack([p0, p1])
 
 def visualize_measusements(img, sil, keypoints):
     contour = find_largest_contour(sil)
@@ -621,14 +719,19 @@ def int_tuple(vals):
 
 
 from scipy.ndimage import filters
-def smooth_contour(contour, sigma = 3):
+
+
+def smooth_contour(contour, sigma=3):
     contour_new = contour.astype(np.float32)
-    contour_new[:, 0, 0] = filters.gaussian_filter1d(contour[:,0,0], sigma=sigma)
-    contour_new[:, 0, 1] = filters.gaussian_filter1d(contour[:,0,1], sigma=sigma)
+    contour_new[:, 0, 0] = filters.gaussian_filter1d(contour[:, 0, 0], sigma=sigma)
+    contour_new[:, 0, 1] = filters.gaussian_filter1d(contour[:, 0, 1], sigma=sigma)
     return contour_new.astype(np.int32)
 
+
 from scipy import interpolate
-def calc_curvature_polyfit(img, contour, win_size, N_resample = 1000):
+
+
+def calc_curvature_polyfit(img, contour, win_size, N_resample=1000):
     half_win_size = int(0.5 * win_size)
     N = N_resample
 
@@ -642,7 +745,7 @@ def calc_curvature_polyfit(img, contour, win_size, N_resample = 1000):
     contour_new[:, 0, 1] = ynew[1].astype(np.int32)
 
     curvatures = np.zeros(N, np.float32)
-    for i in range(half_win_size,N-half_win_size):
+    for i in range(half_win_size, N - half_win_size):
         local_X = contour_new[i - half_win_size: i + half_win_size, 0, 0]
         local_Y = contour_new[i - half_win_size: i + half_win_size, 0, 1]
         coeffs = np.polyfit(local_X, local_Y, 2)
@@ -651,35 +754,39 @@ def calc_curvature_polyfit(img, contour, win_size, N_resample = 1000):
     print(f'curvature min = {curvatures.min()} , max = {curvatures.max()}')
     return contour_new, curvatures
 
+
 def calc_curvature_dot_product(img, contour):
     N = contour.shape[0]
     curvatures = np.zeros(N, np.float32)
     for i in range(N):
-        iprev = i-1 if i > 0 else N-1
-        inext = (i+1) % N
+        iprev = i - 1 if i > 0 else N - 1
+        inext = (i + 1) % N
         prev = contour[iprev, 0, :]
         next = contour[inext, 0, :]
         p = contour[i, 0, :]
         prev_dir = normalize(p - prev)
         next_dir = normalize(next - p)
-        curvatures[i] = 1-np.abs(np.dot(prev_dir, next_dir))
+        curvatures[i] = 1 - np.abs(np.dot(prev_dir, next_dir))
     print(f'curvature min = {curvatures.min()} , max = {curvatures.max()}')
     return contour, curvatures
 
-def display_contour_on_img(img, contour, curvatures = None , out_fig_path = None):
-    #curvatures = (curvatures - curvatures.min())/(curvatures.max() - curvatures.min())
+
+def display_contour_on_img(img, contour, curvatures=None, out_fig_path=None):
+    # curvatures = (curvatures - curvatures.min())/(curvatures.max() - curvatures.min())
     if curvatures != None:
         cm = plt.get_cmap('jet')
         colors = (cm(curvatures) * 255).astype(np.int32)
         for i in range(len(curvatures)):
-            pos = (contour_new[i,0, 0], contour_new[i,0,1])
-            cv.drawMarker(img, pos, (int(colors[2]), int(colors[1]), int(colors[0])), markerType=cv.MARKER_CROSS, markerSize=10, thickness=10)
+            pos = (contour[i, 0, 0], contour[i, 0, 1])
+            cv.drawMarker(img, pos, (int(colors[2]), int(colors[1]), int(colors[0])), markerType=cv.MARKER_CROSS,
+                          markerSize=10, thickness=10)
 
-    cv.drawContours(img, [contour_new],-1, (255,255,255), thickness=2)
-    plt.imshow(img[:,:,::-1])
+    cv.drawContours(img, [contour], -1, (255, 255, 255), thickness=2)
+    plt.imshow(img[:, :, ::-1])
     if out_fig_path != None:
         plt.savefig(out_fig_path, dpi=1000)
     plt.show()
+
 
 if __name__ == '__main__':
     OPENPOSE_MODEL_PATH = 'D:\Projects\Oh\\body_measure\openpose\models\\'
@@ -720,92 +827,123 @@ if __name__ == '__main__':
     keypoints_front, img_front_pose = openpose.forward(img_front, True)
     sil_front = load_silhouette(f'{SILHOUETTE_DIR}{FRONT_IMG}', img_front)
     contour_front = find_largest_contour(sil_front, cv.CHAIN_APPROX_NONE)
-
-    #contour_new, curvatures = calc_curvature(sil_front, contour_front, win_size=11)
-
     contour_front = smooth_contour(contour_front, 3)
     contour_front = cv.approxPolyDP(contour_front, 7, closed=True)
-    contour_new, curvatures = calc_curvature_dot_product(sil_front, contour_front)
+    contour_front, curvatures_front = calc_curvature_dot_product(sil_front, contour_front)
+
+    # display_contour_on_img(img_front_pose, contour_new, curvatures = curvatures)
 
     img_side = cv.imread(f'{IMG_DIR}{SIDE_IMG}')
     keypoints_side, img_side_pose = openpose.forward(img_side, True)
     sil_side = load_silhouette(f'{SILHOUETTE_DIR}{SIDE_IMG}', img_side)
     contour_side = find_largest_contour(sil_side)
+    contour_side = smooth_contour(contour_side, 3)
+    contour_side = cv.approxPolyDP(contour_side, 7, closed=True)
+    contour_side, curvatures_side = calc_curvature_dot_product(sil_side, contour_side)
 
     img_front = img_front_pose
+    cv.drawContours(img_front, [contour_front], -1, (255, 255, 0), thickness=3)
+    cm = plt.get_cmap('jet')
+    colors = (cm(curvatures_front) * 255).astype(np.int32)
+    for i in range(len(curvatures_front)):
+        pos = (contour_front[i, 0, 0], contour_front[i, 0, 1])
+        color = colors[i]
+        cv.drawMarker(img_front, pos, (int(color[2]), int(color[1]), int(color[0])), markerType=cv.MARKER_CROSS,
+                      markerSize=15, thickness=15)
+
     img_side = img_side_pose
-    cv.drawContours(img_front, [contour_front], -1, (255, 255, 0), thickness=5)
-    cv.drawContours(img_side, [contour_side], -1, (255, 255, 0), thickness=5)
+    cv.drawContours(img_side, [contour_side], -1, (255, 255, 0), thickness=3)
+    colors = (cm(curvatures_side) * 255).astype(np.int32)
+    for i in range(len(curvatures_side)):
+        pos = (contour_side[i, 0, 0], contour_side[i, 0, 1])
+        color = colors[i]
+        cv.drawMarker(img_side, pos, (int(color[2]), int(color[1]), int(color[0])), markerType=cv.MARKER_CROSS,
+                      markerSize=15, thickness=15)
+
+    # shoulder
+    front_points = estimate_front_shoulder_points(contour_front, curvatures_front, keypoints_front[0, :, :])
+    # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
+    cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=3)
+
+    # neck
+    front_points = estimate_front_neck_brd_points(contour_front, keypoints_front[0, :, :])
+    # cv.drawMarker(img_front, int_tuple(front_neck_bdr[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_neck_bdr[1]), (255, 0, 0), thickness=10)
+    cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=3)
+
+    side_neck_bdr = estimate_side_neck_brd_points(contour_side, keypoints_side[0, :, :])
+    # cv.drawMarker(img_side, int_tuple(side_neck_bdr[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_side, int_tuple(side_neck_bdr[1]), (255, 0, 0), thickness=10)
+    cv.line(img_side, int_tuple(side_neck_bdr[0]), int_tuple(side_neck_bdr[1]), (0, 255, 255), thickness=3)
+
+    # armpit
+    front_points = estimate_front_armpit(contour_front, curvatures_front, keypoints_front[0, :, :])
+    # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
+    cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=3)
+
+    # left elbow
+    front_points = estimate_front_elbow(contour_front, keypoints_front[0, :, :], left=True)
+    # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
+    cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=3)
+
+    # front elbow
+    front_points = estimate_front_elbow(contour_front, keypoints_front[0, :, :], left=False)
+    # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
+    cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=3)
+
+    # arm
+    front_points = estimate_front_wrist(contour_front, keypoints_front[0, :, :], left=True)
+    # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
+    cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=3)
+
+    front_points = estimate_front_wrist(contour_front, keypoints_front[0, :, :], left=False)
+    # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
+    cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=3)
 
     # hip
     front_hip_bdr = estimate_front_hip_bdr_points(contour_front, keypoints_front[0, :, :])
-    cv.drawMarker(img_front, int_tuple(front_hip_bdr[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_front, int_tuple(front_hip_bdr[1]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_hip_bdr[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_hip_bdr[1]), (255, 0, 0), thickness=10)
     cv.line(img_front, int_tuple(front_hip_bdr[0]), int_tuple(front_hip_bdr[1]), (0, 255, 255), thickness=5)
 
     side_hip_bdr = estimate_side_hip_bdr_points(contour_side, keypoints_side[0, :, :])
-    cv.drawMarker(img_side, int_tuple(side_hip_bdr[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_side, int_tuple(side_hip_bdr[1]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_side, int_tuple(side_hip_bdr[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_side, int_tuple(side_hip_bdr[1]), (255, 0, 0), thickness=10)
     cv.line(img_side, int_tuple(side_hip_bdr[0]), int_tuple(side_hip_bdr[1]), (0, 255, 255), thickness=5)
 
     # waist
     front_waist_bdr = estimate_front_waist_bdr_points(contour_front, keypoints_front[0, :, :])
-    cv.drawMarker(img_front, int_tuple(front_waist_bdr[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_front, int_tuple(front_waist_bdr[1]), (255, 0, 0), thickness=10)
-    cv.line(img_front, int_tuple(front_waist_bdr[0]), int_tuple(front_waist_bdr[1]), (0, 255, 255), thickness=5)
+    # cv.drawMarker(img_front, int_tuple(front_waist_bdr[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_waist_bdr[1]), (255, 0, 0), thickness=10)
+    cv.line(img_front, int_tuple(front_waist_bdr[0]), int_tuple(front_waist_bdr[1]), (0, 255, 255), thickness=3)
 
     side_waist_bdr = estimate_side_waist_bdr_points(contour_side, keypoints_side[0, :, :])
-    cv.drawMarker(img_side, int_tuple(side_waist_bdr[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_side, int_tuple(side_waist_bdr[1]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_side, int_tuple(side_waist_bdr[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_side, int_tuple(side_waist_bdr[1]), (255, 0, 0), thickness=10)
     cv.line(img_side, int_tuple(side_waist_bdr[0]), int_tuple(side_waist_bdr[1]), (0, 255, 255), thickness=5)
-
-    # neck
-    front_neck_bdr = estimate_front_neck_brd_points(contour_front, keypoints_front[0, :, :])
-    cv.drawMarker(img_front, int_tuple(front_neck_bdr[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_front, int_tuple(front_neck_bdr[1]), (255, 0, 0), thickness=10)
-    cv.line(img_front, int_tuple(front_neck_bdr[0]), int_tuple(front_neck_bdr[1]), (0, 255, 255), thickness=5)
-
-    side_neck_bdr = estimate_front_neck_brd_points(contour_side, keypoints_side[0, :, :])
-    cv.drawMarker(img_side, int_tuple(side_neck_bdr[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_side, int_tuple(side_neck_bdr[1]), (255, 0, 0), thickness=10)
-    cv.line(img_side, int_tuple(side_neck_bdr[0]), int_tuple(side_neck_bdr[1]), (0, 255, 255), thickness=5)
 
     # inside leg
     front_points = estimate_front_inside_leg_bdr_points(contour_front, keypoints_front[0, :, :])
-    cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
     cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=5)
 
     side_points = estimate_side_inside_leg_bdr_points(contour_side, keypoints_side[0, :, :])
-    cv.drawMarker(img_side, int_tuple(side_points[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_side, int_tuple(side_points[1]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_side, int_tuple(side_points[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_side, int_tuple(side_points[1]), (255, 0, 0), thickness=10)
     cv.line(img_side, int_tuple(side_points[0]), int_tuple(side_points[1]), (0, 255, 255), thickness=5)
 
-    # shoulder
-    front_points = estimate_front_shoulder_points(contour_front, keypoints_front[0, :, :])
-    cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
-    cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=5)
-
-    # arm
-    front_points = estimate_front_arm(contour_front, keypoints_front[0, :, :])
-    cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
-    cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=5)
-
-    side_points = estimate_side_arm(contour_side, keypoints_side[0, :, :])
-    cv.drawMarker(img_side, int_tuple(side_points[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_side, int_tuple(side_points[1]), (255, 0, 0), thickness=10)
-    cv.line(img_side, int_tuple(side_points[0]), int_tuple(side_points[1]), (0, 255, 255), thickness=5)
-
-    # around arm
-    front_points = estimate_front_around_arm(contour_front, keypoints_front[0, :, :])
-    cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
-    cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
-    cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=5)
+    #side_points = estimate_side_arm(contour_side, keypoints_side[0, :, :])
+    # cv.drawMarker(img_side, int_tuple(side_points[0]), (255, 0, 0), thickness=10)
+    # cv.drawMarker(img_side, int_tuple(side_points[1]), (255, 0, 0), thickness=10)
+    #cv.line(img_side, int_tuple(side_points[0]), int_tuple(side_points[1]), (0, 255, 255), thickness=5)
 
     plt.subplot(121), plt.imshow(img_front[:, :, ::-1])
     plt.subplot(122), plt.imshow(img_side[:, :, ::-1])
-    # plt.subplot(223), plt.imshow(img_front_pose[:,:,::-1])
-    # plt.subplot(224), plt.imshow(img_side_pose[:,:,::-1])
-    plt.show()
+    plt.savefig('D:/Projects/Oh/data/images/mobile/body_measurements.jpg', dpi=1000)
