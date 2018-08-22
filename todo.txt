@@ -1,0 +1,16 @@
+
+-   define measurements that could be calculated from the current skeleton
+        - Around colar:
+            - calculate center of the bone: neck => nose
+            - measure width in both front and side views at this point => calculate circumference of the elipse
+        -
+        - Acromial Height: from shoulder to base line
+        - Ankle Circumference:
+            - the silhouette doesn't separate two legs from each other.
+            - the positions of LAnkle and RAnkle are not at the slice that are used to calculate circumference.
+            - side view:
+                - the other leg interferes in
+
+-   find a better shoulder position
+    problem:
+        - the silhouette at contour is not exact.
