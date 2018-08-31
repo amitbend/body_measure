@@ -6,17 +6,9 @@ import numpy as np
 import numpy.linalg as linalg
 import matplotlib.pyplot as plt
 from pathlib import Path
-from openpose_util import (is_valid_keypoint, pair_length, pair_dir)
+from openpose_util import (is_valid_keypoint, pair_length, pair_dir, find_pose)
 from shapely.geometry import LineString, Point, MultiPoint
 from shapely.ops import nearest_points
-
-OPENPOSE_PATH = 'D:\Projects\Oh\\body_measure\openpose\\build\python\openpose'
-sys.path.append(OPENPOSE_PATH)
-try:
-    from openpose import *
-except:
-    raise Exception(
-        'Error: OpenPose library could not be found. Did you enable `BUILD_PYTHON` in CMake and have this Python script in the right folder?')
 
 POSE_BODY_25_PAIRS_RENDER_GPU = (
     1, 8, 1, 2, 1, 5, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 10, 11, 8, 12, 12, 13, 13, 14, 1, 0, 0, 15, 15, 17, 0, 16,
@@ -529,7 +521,7 @@ def estimate_front_inside_leg_bdr_points(contour, keypoints):
 def estimate_side_inside_leg_bdr_points(contour, keypoints):
     return estimate_front_inside_leg_bdr_points(contour, keypoints)
 
-def estimate_front_shoulder_points(contour, curvatures, keypoints):
+def estimate_front_shoulder_points(contour, keypoints):
     lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
     rshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
     lshoulder = Point(lshoulder)
@@ -728,60 +720,240 @@ def calc_curvature_dot_product(img, contour):
     print(f'curvature min = {curvatures.min()} , max = {curvatures.max()}')
     return contour, curvatures
 
+def refine_landmark(img, ld_point, img_viz):
+    win_size = 50
+    rows, cols = img.shape[:2]
+    ld_point = ld_point.astype(np.int32)
+    x_range = np.array([ld_point[0] - win_size, ld_point[0] + win_size], dtype=np.uint32).clip(min=0, max=rows)
+    y_range = np.array([ld_point[1] - win_size, ld_point[1] + win_size], dtype=np.uint32).clip(min=0, max=cols)
+    rect = img[y_range[0] : y_range[1], x_range[0] : x_range[1], :]
+    rect_gray = cv.cvtColor(rect, cv.COLOR_BGR2GRAY)
+    edges = cv.Canny(rect_gray, 25, 100)
 
-def display_contour_on_img(img, contour, curvatures=None, out_fig_path=None):
-    # curvatures = (curvatures - curvatures.min())/(curvatures.max() - curvatures.min())
-    if curvatures != None:
-        cm = plt.get_cmap('jet')
-        colors = (cm(curvatures) * 255).astype(np.int32)
-        for i in range(len(curvatures)):
-            pos = (contour[i, 0, 0], contour[i, 0, 1])
-            cv.drawMarker(img, pos, (int(colors[2]), int(colors[1]), int(colors[0])), markerType=cv.MARKER_CROSS,
-                          markerSize=10, thickness=10)
 
-    cv.drawContours(img, [contour], -1, (255, 255, 255), thickness=2)
-    plt.imshow(img[:, :, ::-1])
-    if out_fig_path != None:
-        plt.savefig(out_fig_path, dpi=1000)
-    plt.show()
+    #viz stuff
+    rect_viz = img_viz[y_range[0] : y_range[1], x_range[0] : x_range[1], :]
+    edges = cv.morphologyEx(edges, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (2,2)))
+    rect_viz[edges > 0] = (255,0,0)
+    cv.rectangle(img_viz, (ld_point[0] - win_size, ld_point[1] - win_size), (ld_point[0] + win_size, ld_point[1] + win_size), color=(0,255,255), thickness=2)
 
+def refine_landmark_grabcut(img, ld_point, sure_fg, sure_bg, silhouette, img_viz):
+    win_size = 50
+    rows, cols = img.shape[:2]
+    ld_point = ld_point.astype(np.int32)
+    x_range = np.array([ld_point[0] - win_size, ld_point[0] + win_size], dtype=np.uint32).clip(min=0, max=cols)
+    y_range = np.array([ld_point[1] - win_size, ld_point[1] + win_size], dtype=np.uint32).clip(min=0, max=rows)
+
+    rect            = img[y_range[0] : y_range[1], x_range[0] : x_range[1], :]
+    #fg_mask_rect    = sure_fg[y_range[0] : y_range[1], x_range[0] : x_range[1]] > 0
+    #bg_mask_rect    = sure_bg[y_range[0] : y_range[1], x_range[0] : x_range[1]] > 0
+    sil_rect   = silhouette[y_range[0] : y_range[1], x_range[0] : x_range[1]]
+    sil_mask_rect = sil_rect > 0
+
+    mask = np.zeros_like(sil_rect, dtype=np.uint8)
+    mask[:] = cv.GC_PR_BGD
+    mask[sil_mask_rect] = cv.GC_PR_FGD
+
+    #mask_viz_rect = mask_viz[y_range[0]: y_range[1], x_range[0]: x_range[1]]
+    #mask_viz_rect[mask == cv.GC_PR_FGD] = 255
+
+    #mask[fg_mask_rect] = cv.GC_FGD
+    #mask[np.bitwise_not(bg_mask_rect)] = cv.GC_BGD
+
+    #img_1[np.bitwise_not(bg_mask_1)] = (0,0,0)
+    bgdmodel = np.zeros((1, 65), np.float64)
+    fgdmodel = np.zeros((1, 65), np.float64)
+    cv.grabCut(rect, mask, None, bgdmodel, fgdmodel, 5, cv.GC_INIT_WITH_MASK)
+    sil_1 = np.where((mask == cv.GC_PR_FGD) + (mask == cv.GC_FGD), 255, 0).astype('uint8')
+    sil_1 = cv.Canny(sil_1, 5, 20)
+    sil_1   = cv.morphologyEx(sil_1, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (2,2)))
+
+    rect_viz = img_viz[y_range[0] : y_range[1], x_range[0] : x_range[1], :]
+    rect_viz[sil_1> 0] = (0,0,255)
+    cv.rectangle(img_viz, (ld_point[0] - win_size, ld_point[1] - win_size), (ld_point[0] + win_size, ld_point[1] + win_size), color=(0,255,255), thickness=2)
+
+#rect: x, y, w, h
+def grabcut_local_window(img, sil, rect, img_viz):
+    img_rect   = img[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2]]
+    sil_rect   = sil[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2]]
+    sil_mask_rect = sil_rect > 0
+
+    mask = np.zeros_like(sil_rect, dtype=np.uint8)
+    mask[:] = cv.GC_PR_BGD
+    mask[sil_mask_rect] = cv.GC_PR_FGD
+
+    bgdmodel = np.zeros((1, 65), np.float64)
+    fgdmodel = np.zeros((1, 65), np.float64)
+    cv.grabCut(img_rect, mask, None, bgdmodel, fgdmodel, 5, cv.GC_INIT_WITH_MASK)
+    sil_1 = np.where((mask == cv.GC_PR_FGD) + (mask == cv.GC_FGD), 255, 0).astype('uint8')
+    sil_1 = cv.Canny(sil_1, 5, 20)
+    sil_1   = cv.morphologyEx(sil_1, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (2,2)))
+
+    rect_viz = img_viz[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2], :]
+    rect_viz[sil_1> 0] = (0,0,255)
+    cv.rectangle(img_viz, (rect[0], rect[1]), (rect[0]+rect[2], rect[1]+rect[3]), color=(0,255,255), thickness=2)
+
+def grabcut_local_window_head(img, sil, contour, keypoints, img_viz):
+    neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
+    nose = keypoints[POSE_BODY_25_BODY_PART_IDXS['Nose']][:2]
+    lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
+    rshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
+    dir = nose - neck
+    over_head = neck + 2 * dir
+
+    points = np.vstack([neck, over_head, lshoulder, rshoulder])
+    points = np.expand_dims(points, axis=1)
+    points = points.astype(np.int32)
+
+    points[:,0,0] = points[:,0,0].clip(min=0, max= img.shape[1])
+    points[:,0,1] = points[:,0,1].clip(min=0, max= img.shape[1])
+
+    x, y, w, h = cv.boundingRect(points)
+
+    grabcut_local_window(img, sil, (x, y, w, h), img_viz)
+
+def grabcut_local_window_shoulder(img, sil, contour, keypoints, img_viz):
+    neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
+    nose = keypoints[POSE_BODY_25_BODY_PART_IDXS['Nose']][:2]
+
+    lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
+    rshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
+    lshoulder_ext, rshoulder_ext = extend_segment(lshoulder, rshoulder, 0.5)
+
+    neck_ext_0 = neck + 0.5*(nose - neck)
+    neck_ext_1 = neck + 0.5*(neck - nose)
+
+    points = np.vstack([lshoulder_ext, rshoulder_ext, neck_ext_0, neck_ext_1])
+    points = np.expand_dims(points, axis=1)
+    points = points.astype(np.int32)
+    points[:,0,0] = points[:,0,0].clip(min=0, max= img.shape[1])
+    points[:,0,1] = points[:,0,1].clip(min=0, max= img.shape[1])
+
+    x, y, w, h = cv.boundingRect(points)
+
+    grabcut_local_window(img, sil, (x, y, w, h), img_viz)
+
+def grabcut_local_window_torso(img, sil, contour, keypoints, img_viz):
+    lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
+    rshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
+    lshoulder_ext, rshoulder_ext = extend_segment(lshoulder, rshoulder, 0.25)
+    lhip  = keypoints[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
+    rhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['RHip']][:2]
+    points = np.vstack([lshoulder_ext, rshoulder_ext, lhip, rhip])
+    points = np.expand_dims(points, axis=1)
+    points = points.astype(np.int32)
+
+    points[:,0,0] = points[:,0,0].clip(min=0, max= img.shape[1])
+    points[:,0,1] = points[:,0,1].clip(min=0, max= img.shape[1])
+
+    x, y, w, h = cv.boundingRect(points)
+
+    grabcut_local_window(img, sil, (x, y, w, h), img_viz)
+
+def grabcut_local_window_leg(img, sil, contour, keypoints, left_l, img_viz):
+    if left_l:
+        lhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
+        midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
+        ext_len = np.linalg.norm(lhip-midhip)
+
+        ltoe = keypoints[POSE_BODY_25_BODY_PART_IDXS['LBigToe']][:2]
+        ltoe = ltoe + (lhip - midhip)
+        ltoe = ltoe + 0.1*(ltoe - midhip)
+
+        points = np.vstack([lhip, midhip, ltoe])
+    else:
+        rhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['RHip']][:2]
+        midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
+        ext_len = np.linalg.norm(rhip-midhip)
+
+        rtoe = keypoints[POSE_BODY_25_BODY_PART_IDXS['RBigToe']][:2]
+        rtoe = rtoe + (rhip - midhip)
+        rtoe = rtoe + 0.1*(rtoe - midhip)
+
+        points = np.vstack([rhip, midhip, rtoe])
+
+    points = np.expand_dims(points, axis=1)
+    points = points.astype(np.int32)
+    points[:, 0, 0] = points[:, 0, 0].clip(min=0, max=img.shape[1])
+    points[:, 0, 1] = points[:, 0, 1].clip(min=0, max=img.shape[0])
+    x, y, w, h = cv.boundingRect(points)
+    grabcut_local_window(img, sil, (x, y, w, h), img_viz)
+
+def grabcut_local_window_along_segment(img, sil, contour, p0, p1, n_segments, img_viz):
+    dir = p1 - p0
+    contour_string = LineString([contour[i, 0, :] for i in range(contour.shape[0])])
+    len = linalg.norm(dir)
+    step_len = len / n_segments
+    dir = normalize(dir)
+    p_prev = p0 - (step_len+0.2*step_len) * dir
+    for i in range(n_segments):
+        p       =   p0 +  i*step_len  *dir
+        p_next  =   p0 + (i+1)*(step_len) * dir
+
+        p_ext_0 = p.copy()
+        p_ext_0 = p_ext_0 + len*np.array([1,0])
+        p_ext_1 = p.copy()
+        p_ext_1 = p_ext_1 - len*np.array([1,0])
+
+        line = LineString([p_ext_0, p_ext_1])
+        isect_points = line.intersection(contour_string)
+        if type(isect_points) != MultiPoint:
+            continue
+
+        isect_points = np.array([(p.x, p.y) for p in isect_points])
+
+        #corner candidates
+        corner_cdd_0, corner_cdd_1 = k_closest_point_points(p, isect_points, 2)
+        corner_cdd_0, corner_cdd_1 = extend_segment(corner_cdd_0, corner_cdd_1, 0.3)
+        points = np.vstack([corner_cdd_0, corner_cdd_1, p_next, p_prev])
+        points = np.expand_dims(points, axis=1)
+        points = points.astype(np.int32)
+
+        # for i in range(4):
+        #     cv.drawMarker(img, int_tuple(points[i, 0,:]), color=(255,0,0), markerType=cv.MARKER_CROSS, markerSize=20, thickness=10)
+        # plt.imshow(img)
+        # plt.show()
+
+        x, y, w, h = cv.boundingRect(points)
+        p_prev = p
+
+        grabcut_local_window(img, sil, (x,y,w,h), img_viz)
+
+def apply_grabcut_local_windows(img, sil, contour, keypoints, img_viz):
+    grabcut_local_window_head(img, sil, contour, keypoints, img_viz)
+    grabcut_local_window_torso(img, sil, contour, keypoints, img_viz)
+    grabcut_local_window_shoulder(img, sil, contour, keypoints, img_viz)
+    grabcut_local_window_leg(img, sil, contour, keypoints, True,  img_viz)
+    grabcut_local_window_leg(img, sil, contour, keypoints, False, img_viz)
 
 if __name__ == '__main__':
-    OPENPOSE_MODEL_PATH = 'D:\Projects\Oh\\body_measure\openpose\models\\'
-
-    ROOT_DIR = 'D:\Projects\Oh\data\images\mobile\oh_images\\'
-    IMG_DIR = f'{ROOT_DIR}images\\'
-    SILHOUETTE_DIR = f'{ROOT_DIR}\silhouette_post\\'
+    ROOT_DIR = '/home/khanhhh/data_1/projects/Oh/data/oh_mobile_images/'
+    IMG_DIR = f'{ROOT_DIR}images/'
+    SILHOUETTE_DIR = f'{ROOT_DIR}silhouette_deeplab/'
     #OUT_DIR = f'{ROOT_DIR}pose_result\\'
-    OUT_MEASUREMENT_DIR = f'{ROOT_DIR}measurements_deeplab_postprocess\\'
-
-    params = dict()
-    params["logging_level"] = 3
-    params["output_resolution"] = "-1x-1"
-    params["net_resolution"] = "-1x368"
-    params["model_pose"] = "BODY_25"
-    params["alpha_pose"] = 0.6
-    params["scale_gap"] = 0.3
-    params["scale_number"] = 1
-    params["render_threshold"] = 0.05
-    # If GPU version is built, and multiple GPUs are available, set the ID here
-    params["num_gpu_start"] = 0
-    params["disable_blending"] = False
-    # Ensure you point to the correct path where models are located
-    params["default_model_folder"] = OPENPOSE_MODEL_PATH
-    # Construct OpenPose object allocates GPU memory
-    openpose = OpenPose(params)
+    OUT_MEASUREMENT_DIR = f'{ROOT_DIR}grabcut_local_window/'
 
     MARKER_SIZE = 5
     MARKER_THICKNESS = 5
     LINE_THICKNESS = 2
 
+    for f in Path(OUT_MEASUREMENT_DIR).glob('*.*'):
+        os.remove(f)
+
     for img_path in Path(IMG_DIR).glob('*.*'):
+        print(img_path)
 
         img_front = cv.imread(str(img_path))
-        keypoints_front, img_front_pose = openpose.forward(img_front, True)
+        img_front_org = img_front.copy()
+        keypoints_front, img_front_pose = find_pose(img_front)
+
         sil_front = load_silhouette(f'{SILHOUETTE_DIR}{img_path.name}', img_front)
         sil_front = fix_silhouette(sil_front)
+
+        fg_mask = cv.morphologyEx(sil_front, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (50,50)))
+        bg_mask = cv.morphologyEx(sil_front, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (30,30)))
+        grabcut_local_mask = np.zeros_like(fg_mask)
+
         contour_front = find_largest_contour(sil_front, cv.CHAIN_APPROX_NONE)
         contour_front = smooth_contour(contour_front, 3)
         contour_front = cv.approxPolyDP(contour_front, 3, closed=True)
@@ -816,14 +988,26 @@ if __name__ == '__main__':
         #     cv.drawMarker(img_side, pos, (int(color[2]), int(color[1]), int(color[0])), markerType=cv.MARKER_CROSS,
         #                   markerSize=15, thickness=15)
 
+        sil_front = cv.morphologyEx(sil_front, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
+        apply_grabcut_local_windows(img_front_org, sil_front, contour_front, keypoints_front[0,:,:], img_front)
+        plt.subplot(111), plt.imshow(img_front[:, :, ::-1])
+        #plt.show()
+        plt.savefig(f'{OUT_MEASUREMENT_DIR}{img_path.name}', dpi=1000)
+        continue
+
+
         # shoulder
-        front_points = estimate_front_shoulder_points(contour_front, curvatures_front, keypoints_front[0, :, :])
+        front_points = estimate_front_shoulder_points(contour_front, keypoints_front[0, :, :])
+        refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
+        refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
 
         # neck
         front_points = estimate_front_neck_brd_points(contour_front, keypoints_front[0, :, :])
+        refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
+        refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_neck_bdr[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_neck_bdr[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
@@ -835,6 +1019,8 @@ if __name__ == '__main__':
 
         # armpit
         front_points = estimate_front_armpit(contour_front, curvatures_front, keypoints_front[0, :, :])
+        refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
+        refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
@@ -864,6 +1050,8 @@ if __name__ == '__main__':
 
         # hip
         front_hip_bdr = estimate_front_hip_bdr_points(contour_front, keypoints_front[0, :, :])
+        refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
+        refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_hip_bdr[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_hip_bdr[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_hip_bdr[0]), int_tuple(front_hip_bdr[1]), (0, 255, 255), thickness=LINE_THICKNESS)
@@ -875,6 +1063,8 @@ if __name__ == '__main__':
 
         # waist
         front_waist_bdr = estimate_front_waist_bdr_points(contour_front, keypoints_front[0, :, :])
+        refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
+        refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_waist_bdr[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_waist_bdr[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_waist_bdr[0]), int_tuple(front_waist_bdr[1]), (0, 255, 255), thickness=LINE_THICKNESS)
@@ -886,6 +1076,8 @@ if __name__ == '__main__':
 
         # inside leg
         front_points = estimate_front_inside_leg_bdr_points(contour_front, keypoints_front[0, :, :])
+        #refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
+        #refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
@@ -901,6 +1093,9 @@ if __name__ == '__main__':
         #cv.line(img_side, int_tuple(side_points[0]), int_tuple(side_points[1]), (0, 255, 255), thickness=5)
 
         plt.subplot(111), plt.imshow(img_front[:, :, ::-1])
+        #plt.subplot(111), plt.imshow(fg_mask, alpha=0.5)
+        #plt.subplot(111), plt.imshow(bg_mask, alpha=0.5)
+
         #plt.subplot(122), plt.imshow(img_side[:, :, ::-1])
         #plt.show()
         plt.savefig(f'{OUT_MEASUREMENT_DIR}{img_path.name}', dpi=1000)

@@ -2,7 +2,7 @@ import sys
 import numpy as np
 import numpy.linalg as linalg
 
-OPENPOSE_PATH = 'D:\Projects\Oh\\body_measure\openpose\\build\python\openpose'
+OPENPOSE_PATH = '/home/khanhhh/data_1/projects/Oh/codes/body_measure/openpose/python/openpose'
 sys.path.append(OPENPOSE_PATH)
 try:
     from openpose import *
@@ -49,7 +49,8 @@ POSE_BODY_25_BODY_PART_IDXS = {v: k for k, v in POSE_BODY_25_BODY_PARTS.items()}
 
 KEYPOINT_THRESHOLD = 0.01
 
-OPENPOSE_MODEL_PATH = 'D:\Projects\Oh\\body_measure\openpose\models\\'
+#OPENPOSE_MODEL_PATH = 'D:\Projects\Oh\\body_measure\openpose\models\\'
+OPENPOSE_MODEL_PATH = '/home/khanhhh/data_1/projects/Oh/codes/body_measure/openpose/models/'
 
 def find_pose(img):
     params = dict()
