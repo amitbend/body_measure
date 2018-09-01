@@ -275,13 +275,10 @@ def gen_fg_bg_masks(img, keypoints, front_view = True):
 from pathlib import Path
 import matplotlib.pyplot as plt
 
-
 if __name__ == '__main__':
     DIR_ROOT = 'D:/Projects/Oh/data/images/mobile/oh_images/'
     DIR_IMG = f'{DIR_ROOT}/images/'
     DIR_TRIMAP = f'{DIR_ROOT}/tri_map/'
-    saliency = cv.saliency.StaticSaliencyFineGrained_create()
-    #saliency = cv.saliency.StaticSaliencySpectralResidual_create()
 
     for path in Path(DIR_IMG).glob('*.*'):
         #if 'IMG_1942' not in str(path):

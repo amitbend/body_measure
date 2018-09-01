@@ -7,6 +7,7 @@ import numpy.linalg as linalg
 import matplotlib.pyplot as plt
 from pathlib import Path
 from openpose_util import (is_valid_keypoint, pair_length, pair_dir, find_pose)
+from pose_to_trimap import gen_fg_bg_masks
 from shapely.geometry import LineString, Point, MultiPoint
 from shapely.ops import nearest_points
 
@@ -83,98 +84,6 @@ def extend_rect(p0, p1, extent):
     c3 = (p1 + 0.5 * extent * n).astype(np.int32)
     return np.array([c0, c1, c2, c3])
 
-
-def generate_bone_width():
-    neck_mid_hip = 200
-    neck_nose = 50
-
-    min_width = 5
-
-    pairs = POSE_BODY_25_PAIRS_RENDER_GPU
-
-    n_pairs = int(len(pairs) / 2)
-    widths = np.zeros(n_pairs, dtype=np.int32)
-
-    for i_pair in range(n_pairs):
-        pair = (pairs[i_pair * 2], pairs[i_pair * 2 + 1])
-
-        if is_pair(pair, 'Neck', 'Nose'):
-            widths[i_pair] = int(neck_nose)
-
-        elif is_pair(pair, 'Neck', 'MidHip'):
-            widths[i_pair] = int(neck_mid_hip)
-
-        elif is_pair(pair, 'Neck', 'RShoulder'):
-            widths[i_pair] = int(1.1 * neck_nose)
-        elif is_pair(pair, 'RShoulder', 'RElbow'):
-            widths[i_pair] = int(0.7 * neck_nose)
-        elif is_pair(pair, 'RElbow', 'RWrist'):
-            widths[i_pair] = int(0.4 * neck_nose)
-
-        elif is_pair(pair, 'Neck', 'LShoulder'):
-            widths[i_pair] = int(1.1 * neck_nose)
-        elif is_pair(pair, 'LShoulder', 'LElbow'):
-            widths[i_pair] = int(0.7 * neck_nose)
-        elif is_pair(pair, 'LElbow', 'LWrist'):
-            widths[i_pair] = int(0.4 * neck_nose)
-
-        elif is_pair(pair, 'MidHip', 'RHip'):
-            widths[i_pair] = int(1.2 * neck_nose)
-        elif is_pair(pair, 'RHip', 'RKnee'):
-            widths[i_pair] = int(1.1 * neck_nose)
-        elif is_pair(pair, 'RKnee', 'RAnkle'):
-            widths[i_pair] = int(1.0 * neck_nose)
-        elif is_pair(pair, 'RAnkle', 'RBigToe'):
-            widths[i_pair] = int(0.4 * neck_nose)
-        elif is_pair(pair, 'RBigToe', 'RSmallToe'):
-            widths[i_pair] = int(0.2 * neck_nose)
-
-        elif is_pair(pair, 'MidHip', 'LHip'):
-            widths[i_pair] = int(1.2 * neck_nose)
-        elif is_pair(pair, 'LHip', 'LKnee'):
-            widths[i_pair] = int(1.1 * neck_nose)
-        elif is_pair(pair, 'LKnee', 'LAnkle'):
-            widths[i_pair] = int(1.0 * neck_nose)
-        elif is_pair(pair, 'LAnkle', 'LBigToe'):
-            widths[i_pair] = int(0.4 * neck_nose)
-        elif is_pair(pair, 'LBigToe', 'LSmallToe'):
-            widths[i_pair] = int(0.2 * neck_nose)
-
-        else:
-            widths[i_pair] = min_width
-
-    return widths
-
-
-def draw_bone(img, width, p0, p1, fit=True):
-    dir = p0 - p1
-    # when width is large, cv.line also extent the segment along the line, which we don't want.
-    # so we shrink the segment a bit
-    if fit == True and linalg.norm(dir) > 1.3 * width:
-        dir = normalize(dir)
-        p0 = (p0 - 0.5 * width * dir).astype(np.int32)
-        p1 = (p1 + 0.5 * width * dir).astype(np.int32)
-    # print(type(width))
-    cv.line(img, tuple(p0), tuple(p1), (255, 255, 255), width)
-
-def generate_fg_mask(img, keypoints, bone_widths):
-    n_pairs = int(len(POSE_BODY_25_PAIRS_RENDER_GPU) / 2)
-    fg_mask = np.zeros(img.shape[:2], dtype=np.uint8)
-    for i_pair in range(n_pairs):
-        idx_0 = POSE_BODY_25_PAIRS_RENDER_GPU[i_pair * 2]
-        idx_1 = POSE_BODY_25_PAIRS_RENDER_GPU[i_pair * 2 + 1]
-
-        if not is_valid_keypoint(keypoints[0, idx_0, :]) or not is_valid_keypoint(keypoints[0, idx_1, :]):
-            continue
-
-        kpoint_0 = keypoints[0, idx_0, :2].astype(np.int32)
-        kpoint_1 = keypoints[0, idx_1, :2].astype(np.int32)
-
-        draw_bone(fg_mask, bone_widths[i_pair], kpoint_0, kpoint_1)
-
-    return fg_mask
-
-
 def extend_segment(p0, p1, percent):
     dir = p0 - p1
     p0_ = (p0 + percent * dir).astype(np.int32)
@@ -183,57 +92,6 @@ def extend_segment(p0, p1, percent):
     len1 = linalg.norm(p0_ - p1_)
     assert (len1 > len0)
     return p0_, p1_
-
-
-def generate_bg_mask(img, keypoints, bone_widths):
-    n_pairs = int(len(POSE_BODY_25_PAIRS_RENDER_GPU) / 2)
-
-    bg_mask = np.zeros(img.shape[:2], dtype=np.uint8)
-
-    bone_widths_dilated = (3 * bone_widths).astype(np.int32)
-
-    for i_pair in range(n_pairs):
-        idx_0 = POSE_BODY_25_PAIRS_RENDER_GPU[i_pair * 2]
-        idx_1 = POSE_BODY_25_PAIRS_RENDER_GPU[i_pair * 2 + 1]
-
-        if not is_valid_keypoint(keypoints[0, idx_0, :]) or not is_valid_keypoint(keypoints[0, idx_1, :]):
-            continue
-
-        kpoint_0 = keypoints[0, idx_0, :2].astype(np.int32)
-        kpoint_1 = keypoints[0, idx_1, :2].astype(np.int32)
-
-        if is_pair((idx_0, idx_1), 'Neck', 'Nose') or \
-                is_pair((idx_0, idx_1), 'Neck', 'Nose') or \
-                is_pair((idx_0, idx_1), 'LElbow', 'LWrist') or \
-                is_pair((idx_0, idx_1), 'RElbow', 'RWrist'):
-            kpoint_0, kpoint_1 = extend_segment(kpoint_0, kpoint_1, 0.9)
-
-        if is_pair((idx_0, idx_1), 'Neck', 'MidHip'):
-            kpoint_0, kpoint_1 = extend_segment(kpoint_0, kpoint_1, 0.6)
-
-        draw_bone(bg_mask, bone_widths_dilated[i_pair], kpoint_0, kpoint_1)
-
-    bg_mask = cv.morphologyEx(bg_mask, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (50, 50)), iterations=4)
-
-    return 255 - bg_mask
-
-
-def gen_fg_bg_masks(img, keypoints, bone_widths):
-    if keypoints.shape[0] < 1:
-        fg_mask = np.zeros(img.shape[:2], dtype=np.uint8)
-        bg_mask = np.zeros(img.shape[:2], dtype=np.uint8)
-    else:
-        fg_mask = generate_fg_mask(img, keypoints, bone_widths)
-        bg_mask = generate_bg_mask(img, keypoints, bone_widths)
-
-        amap = np.zeros(fg_mask.shape, dtype=np.uint8)
-        amap[fg_mask > 0] = 255
-        amap[np.bitwise_and(np.bitwise_not(bg_mask > 0), np.bitwise_not(fg_mask > 0))] = 155
-
-    # cv.imwrite(f'{OUT_DIR}{Path(img_path).name}', output_image)
-    # cv.imwrite(f'{OUT_DIR_ALPHA_MAP}{Path(img_path).name}', amap)
-    return fg_mask, bg_mask
-
 
 def find_largest_contour(img_bi, app_type=cv.CHAIN_APPROX_TC89_L1):
     cnt, contours, _ = cv.findContours(img_bi, cv.RETR_LIST, app_type)
@@ -259,7 +117,6 @@ def closest_point_segment(p0, p1, p):
     else:
         return p0 + t * p10
 
-
 def dst_point_segment(p0, p1, p):
     tmp = closest_point_segment(p0, p1, p)
     tmp = p - tmp
@@ -276,11 +133,9 @@ def closest_point_contour(contour, point):
     dists = np.sqrt(np.sum(diffs ** 2, axis=2))
     return np.argmin(dists)
 
-
 def closest_dst_point_contour(contour, point):
     cls_idx = closest_point_contour(contour, point)
     return np.linalg.norm(contour[cls_idx, 0, :] - point)
-
 
 def radius_search_on_contour(contour, point, radius):
     diffs = contour - point
@@ -289,7 +144,6 @@ def radius_search_on_contour(contour, point, radius):
     return np.where(mask == True)[0], dists[mask]
 
 import sys
-
 def closest_point_contour_segments(contour, point):
     contour = contour.astype(np.float32)
     point = point.astype(np.float32)
@@ -601,7 +455,6 @@ def estimate_front_armpit(contour, curvatures, keypoints):
 
     return np.vstack([contour[larmpit_idx, 0, :], contour[rarmpit_idx, 0, :]])
 
-
 def estimate_front_elbow(contour, keypoints, left = False):
     if left == True:
         elbow = keypoints[POSE_BODY_25_BODY_PART_IDXS['LElbow']][:2]
@@ -704,7 +557,6 @@ def calc_curvature_polyfit(img, contour, win_size, N_resample=1000):
     print(f'curvature min = {curvatures.min()} , max = {curvatures.max()}')
     return contour_new, curvatures
 
-
 def calc_curvature_dot_product(img, contour):
     N = contour.shape[0]
     curvatures = np.zeros(N, np.float32)
@@ -737,43 +589,8 @@ def refine_landmark(img, ld_point, img_viz):
     rect_viz[edges > 0] = (255,0,0)
     cv.rectangle(img_viz, (ld_point[0] - win_size, ld_point[1] - win_size), (ld_point[0] + win_size, ld_point[1] + win_size), color=(0,255,255), thickness=2)
 
-def refine_landmark_grabcut(img, ld_point, sure_fg, sure_bg, silhouette, img_viz):
-    win_size = 50
-    rows, cols = img.shape[:2]
-    ld_point = ld_point.astype(np.int32)
-    x_range = np.array([ld_point[0] - win_size, ld_point[0] + win_size], dtype=np.uint32).clip(min=0, max=cols)
-    y_range = np.array([ld_point[1] - win_size, ld_point[1] + win_size], dtype=np.uint32).clip(min=0, max=rows)
-
-    rect            = img[y_range[0] : y_range[1], x_range[0] : x_range[1], :]
-    #fg_mask_rect    = sure_fg[y_range[0] : y_range[1], x_range[0] : x_range[1]] > 0
-    #bg_mask_rect    = sure_bg[y_range[0] : y_range[1], x_range[0] : x_range[1]] > 0
-    sil_rect   = silhouette[y_range[0] : y_range[1], x_range[0] : x_range[1]]
-    sil_mask_rect = sil_rect > 0
-
-    mask = np.zeros_like(sil_rect, dtype=np.uint8)
-    mask[:] = cv.GC_PR_BGD
-    mask[sil_mask_rect] = cv.GC_PR_FGD
-
-    #mask_viz_rect = mask_viz[y_range[0]: y_range[1], x_range[0]: x_range[1]]
-    #mask_viz_rect[mask == cv.GC_PR_FGD] = 255
-
-    #mask[fg_mask_rect] = cv.GC_FGD
-    #mask[np.bitwise_not(bg_mask_rect)] = cv.GC_BGD
-
-    #img_1[np.bitwise_not(bg_mask_1)] = (0,0,0)
-    bgdmodel = np.zeros((1, 65), np.float64)
-    fgdmodel = np.zeros((1, 65), np.float64)
-    cv.grabCut(rect, mask, None, bgdmodel, fgdmodel, 5, cv.GC_INIT_WITH_MASK)
-    sil_1 = np.where((mask == cv.GC_PR_FGD) + (mask == cv.GC_FGD), 255, 0).astype('uint8')
-    sil_1 = cv.Canny(sil_1, 5, 20)
-    sil_1   = cv.morphologyEx(sil_1, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (2,2)))
-
-    rect_viz = img_viz[y_range[0] : y_range[1], x_range[0] : x_range[1], :]
-    rect_viz[sil_1> 0] = (0,0,255)
-    cv.rectangle(img_viz, (ld_point[0] - win_size, ld_point[1] - win_size), (ld_point[0] + win_size, ld_point[1] + win_size), color=(0,255,255), thickness=2)
-
 #rect: x, y, w, h
-def grabcut_local_window(img, sil, rect, img_viz):
+def grabcut_local_window(img, sil, sure_fg_mask = None, sure_bg_mask = None, rect = None, img_viz = None):
     img_rect   = img[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2]]
     sil_rect   = sil[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2]]
     sil_mask_rect = sil_rect > 0
@@ -781,19 +598,29 @@ def grabcut_local_window(img, sil, rect, img_viz):
     mask = np.zeros_like(sil_rect, dtype=np.uint8)
     mask[:] = cv.GC_PR_BGD
     mask[sil_mask_rect] = cv.GC_PR_FGD
+    if sure_fg_mask is not None:
+        sure_fg_mask_rect = sure_fg_mask[rect[1]:rect[1] + rect[3], rect[0]:rect[0] + rect[2]]
+        mask[sure_fg_mask_rect] = cv.GC_FGD
+    if sure_bg_mask is not None:
+        sure_bg_mask_rect = sure_bg_mask[rect[1]:rect[1] + rect[3], rect[0]:rect[0] + rect[2]]
+        mask[sure_bg_mask_rect] = cv.GC_BGD
 
-    bgdmodel = np.zeros((1, 65), np.float64)
-    fgdmodel = np.zeros((1, 65), np.float64)
-    cv.grabCut(img_rect, mask, None, bgdmodel, fgdmodel, 5, cv.GC_INIT_WITH_MASK)
-    sil_1 = np.where((mask == cv.GC_PR_FGD) + (mask == cv.GC_FGD), 255, 0).astype('uint8')
-    sil_1 = cv.Canny(sil_1, 5, 20)
-    sil_1   = cv.morphologyEx(sil_1, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (2,2)))
+    for i in range(2):
+        bgdmodel = np.zeros((1, 65), np.float64)
+        fgdmodel = np.zeros((1, 65), np.float64)
+        cv.grabCut(img_rect, mask, None, bgdmodel, fgdmodel, 2, cv.GC_INIT_WITH_MASK)
+        sil_1 = np.where((mask == cv.GC_PR_FGD) + (mask == cv.GC_FGD), 255, 0).astype('uint8')
 
-    rect_viz = img_viz[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2], :]
-    rect_viz[sil_1> 0] = (0,0,255)
-    cv.rectangle(img_viz, (rect[0], rect[1]), (rect[0]+rect[2], rect[1]+rect[3]), color=(0,255,255), thickness=2)
+    if img_viz is not None:
+        edges = cv.Canny(sil_1, 5, 20)
+        edges = cv.morphologyEx(edges, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (2, 2)))
+        rect_viz = img_viz[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2], :]
+        rect_viz[edges> 0] = (0,0,255)
+        cv.rectangle(img_viz, (rect[0], rect[1]), (rect[0]+rect[2], rect[1]+rect[3]), color=(0,255,255), thickness=2)
 
-def grabcut_local_window_head(img, sil, contour, keypoints, img_viz):
+    return sil_1
+
+def grabcut_local_window_head(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, img_viz):
     neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     nose = keypoints[POSE_BODY_25_BODY_PART_IDXS['Nose']][:2]
     lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
@@ -810,9 +637,10 @@ def grabcut_local_window_head(img, sil, contour, keypoints, img_viz):
 
     x, y, w, h = cv.boundingRect(points)
 
-    grabcut_local_window(img, sil, (x, y, w, h), img_viz)
+    sil_part = grabcut_local_window(img, sil, sure_fg_mask, sure_bg_mask, (x, y, w, h), img_viz)
+    return (x, y, w, h), sil_part
 
-def grabcut_local_window_shoulder(img, sil, contour, keypoints, img_viz):
+def grabcut_local_window_shoulder(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, img_viz):
     neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     nose = keypoints[POSE_BODY_25_BODY_PART_IDXS['Nose']][:2]
 
@@ -831,9 +659,11 @@ def grabcut_local_window_shoulder(img, sil, contour, keypoints, img_viz):
 
     x, y, w, h = cv.boundingRect(points)
 
-    grabcut_local_window(img, sil, (x, y, w, h), img_viz)
+    sil_part = grabcut_local_window(img, sil, sure_fg_mask, sure_bg_mask, (x, y, w, h), img_viz)
 
-def grabcut_local_window_torso(img, sil, contour, keypoints, img_viz):
+    return (x, y, w, h), sil_part
+
+def grabcut_local_window_torso(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, img_viz):
     lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
     rshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
     lshoulder_ext, rshoulder_ext = extend_segment(lshoulder, rshoulder, 0.25)
@@ -848,83 +678,80 @@ def grabcut_local_window_torso(img, sil, contour, keypoints, img_viz):
 
     x, y, w, h = cv.boundingRect(points)
 
-    grabcut_local_window(img, sil, (x, y, w, h), img_viz)
+    sil_part = grabcut_local_window(img, sil, sure_fg_mask, sure_bg_mask, (x, y, w, h), img_viz)
+    return (x, y, w, h), sil_part
 
-def grabcut_local_window_leg(img, sil, contour, keypoints, left_l, img_viz):
-    if left_l:
-        lhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
-        midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
-        ext_len = np.linalg.norm(lhip-midhip)
+def grabcut_local_window_leg(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, img_viz):
+    lhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
+    midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
 
-        ltoe = keypoints[POSE_BODY_25_BODY_PART_IDXS['LBigToe']][:2]
-        ltoe = ltoe + (lhip - midhip)
-        ltoe = ltoe + 0.1*(ltoe - midhip)
+    ltoe = keypoints[POSE_BODY_25_BODY_PART_IDXS['LBigToe']][:2]
+    ltoe = ltoe + (lhip - midhip)
+    ltoe = ltoe + 0.1*(ltoe - midhip)
 
-        points = np.vstack([lhip, midhip, ltoe])
+    rhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['RHip']][:2]
+    midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
+
+    rtoe = keypoints[POSE_BODY_25_BODY_PART_IDXS['RBigToe']][:2]
+    rtoe = rtoe + (rhip - midhip)
+    rtoe = rtoe + 0.1*(rtoe - midhip)
+
+    points = np.vstack([rhip, midhip, rtoe, lhip, midhip, ltoe])
+    points = np.expand_dims(points, axis=1)
+    points = points.astype(np.int32)
+    points[:, 0, 0] = points[:, 0, 0].clip(min=0, max=img.shape[1])
+    points[:, 0, 1] = points[:, 0, 1].clip(min=0, max=img.shape[0])
+
+    x, y, w, h = cv.boundingRect(points)
+    sil_part = grabcut_local_window(img, sil, sure_fg_mask, sure_bg_mask, (x, y, w, h), img_viz)
+    return (x, y, w, h), sil_part
+
+def grabcut_local_window_hand(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, left_hand, img_viz):
+    if left_hand:
+        lshouder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
+        lwrist   = keypoints[POSE_BODY_25_BODY_PART_IDXS['LWrist']][:2]
+        lwrist   = lwrist + 0.5 * (lwrist - lshouder)
+        points   = np.vstack([lshouder, lwrist])
     else:
-        rhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['RHip']][:2]
-        midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
-        ext_len = np.linalg.norm(rhip-midhip)
-
-        rtoe = keypoints[POSE_BODY_25_BODY_PART_IDXS['RBigToe']][:2]
-        rtoe = rtoe + (rhip - midhip)
-        rtoe = rtoe + 0.1*(rtoe - midhip)
-
-        points = np.vstack([rhip, midhip, rtoe])
+        rshouder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
+        rwrist   = keypoints[POSE_BODY_25_BODY_PART_IDXS['RWrist']][:2]
+        rwrist   = rwrist + 0.5 * (rwrist - rshouder)
+        points   = np.vstack([rshouder, rwrist])
 
     points = np.expand_dims(points, axis=1)
     points = points.astype(np.int32)
     points[:, 0, 0] = points[:, 0, 0].clip(min=0, max=img.shape[1])
     points[:, 0, 1] = points[:, 0, 1].clip(min=0, max=img.shape[0])
     x, y, w, h = cv.boundingRect(points)
-    grabcut_local_window(img, sil, (x, y, w, h), img_viz)
 
-def grabcut_local_window_along_segment(img, sil, contour, p0, p1, n_segments, img_viz):
-    dir = p1 - p0
-    contour_string = LineString([contour[i, 0, :] for i in range(contour.shape[0])])
-    len = linalg.norm(dir)
-    step_len = len / n_segments
-    dir = normalize(dir)
-    p_prev = p0 - (step_len+0.2*step_len) * dir
-    for i in range(n_segments):
-        p       =   p0 +  i*step_len  *dir
-        p_next  =   p0 + (i+1)*(step_len) * dir
+    sil_part = grabcut_local_window(img, sil, sure_fg_mask, sure_bg_mask, (x, y, w, h), img_viz)
+    return (x, y, w, h), sil_part
 
-        p_ext_0 = p.copy()
-        p_ext_0 = p_ext_0 + len*np.array([1,0])
-        p_ext_1 = p.copy()
-        p_ext_1 = p_ext_1 - len*np.array([1,0])
+def apply_grabcut_local_windows(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, img_viz):
+    rect_sils = []
+    pair = grabcut_local_window_head(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, img_viz)
+    rect_sils.append(pair)
+    pair = grabcut_local_window_torso(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, img_viz)
+    rect_sils.append(pair)
+    pair = grabcut_local_window_shoulder(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, img_viz)
+    rect_sils.append(pair)
+    pair = grabcut_local_window_leg(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, img_viz)
+    rect_sils.append(pair)
+    pair = grabcut_local_window_hand(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, True, img_viz)
+    rect_sils.append(pair)
+    pair = grabcut_local_window_hand(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints, False, img_viz)
+    rect_sils.append(pair)
 
-        line = LineString([p_ext_0, p_ext_1])
-        isect_points = line.intersection(contour_string)
-        if type(isect_points) != MultiPoint:
-            continue
+    sil_refined = np.zeros_like(sil)
+    sil_tmp= np.zeros_like(sil)
+    for pair in rect_sils:
+        rect = pair[0]
+        sil_part = pair[1]
+        sil_tmp[rect[1]:rect[1] + rect[3], rect[0]:rect[0] + rect[2]] = sil_part
+        sil_refined = np.bitwise_or(sil_refined, sil_tmp)
 
-        isect_points = np.array([(p.x, p.y) for p in isect_points])
-
-        #corner candidates
-        corner_cdd_0, corner_cdd_1 = k_closest_point_points(p, isect_points, 2)
-        corner_cdd_0, corner_cdd_1 = extend_segment(corner_cdd_0, corner_cdd_1, 0.3)
-        points = np.vstack([corner_cdd_0, corner_cdd_1, p_next, p_prev])
-        points = np.expand_dims(points, axis=1)
-        points = points.astype(np.int32)
-
-        # for i in range(4):
-        #     cv.drawMarker(img, int_tuple(points[i, 0,:]), color=(255,0,0), markerType=cv.MARKER_CROSS, markerSize=20, thickness=10)
-        # plt.imshow(img)
-        # plt.show()
-
-        x, y, w, h = cv.boundingRect(points)
-        p_prev = p
-
-        grabcut_local_window(img, sil, (x,y,w,h), img_viz)
-
-def apply_grabcut_local_windows(img, sil, contour, keypoints, img_viz):
-    grabcut_local_window_head(img, sil, contour, keypoints, img_viz)
-    grabcut_local_window_torso(img, sil, contour, keypoints, img_viz)
-    grabcut_local_window_shoulder(img, sil, contour, keypoints, img_viz)
-    grabcut_local_window_leg(img, sil, contour, keypoints, True,  img_viz)
-    grabcut_local_window_leg(img, sil, contour, keypoints, False, img_viz)
+    #sil_refined = np.bitwise_and(sil_refined, sil)
+    return sil_refined
 
 if __name__ == '__main__':
     ROOT_DIR = '/home/khanhhh/data_1/projects/Oh/data/oh_mobile_images/'
@@ -952,7 +779,11 @@ if __name__ == '__main__':
 
         fg_mask = cv.morphologyEx(sil_front, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (50,50)))
         bg_mask = cv.morphologyEx(sil_front, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (30,30)))
-        grabcut_local_mask = np.zeros_like(fg_mask)
+
+        sure_fg_mask, _ = gen_fg_bg_masks(img_front, keypoints_front, front_view=True)
+        sure_fg_mask = (sure_fg_mask == 255)
+
+        sure_bg_mask = (bg_mask != 255)
 
         contour_front = find_largest_contour(sil_front, cv.CHAIN_APPROX_NONE)
         contour_front = smooth_contour(contour_front, 3)
@@ -989,25 +820,28 @@ if __name__ == '__main__':
         #                   markerSize=15, thickness=15)
 
         sil_front = cv.morphologyEx(sil_front, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
-        apply_grabcut_local_windows(img_front_org, sil_front, contour_front, keypoints_front[0,:,:], img_front)
-        plt.subplot(111), plt.imshow(img_front[:, :, ::-1])
-        #plt.show()
+        sil_front_refined = apply_grabcut_local_windows(img_front_org, sil_front, sure_fg_mask, sure_bg_mask, contour_front, keypoints_front[0,:,:], img_front)
+        contour_front_refined = find_largest_contour(sil_front_refined, cv.CHAIN_APPROX_TC89_L1)
+
+        img_front_1 = img_front_org.copy()
+        cv.drawContours(img_front_1, [contour_front], -1, (255, 0, 0), thickness=3)
+        cv.drawContours(img_front_1, [contour_front_refined], -1, (0, 0, 255), thickness=3)
+
+        plt.subplot(121), plt.imshow(img_front[:, :, ::-1])
+        plt.subplot(122), plt.imshow(img_front_1[:, :, ::-1])
         plt.savefig(f'{OUT_MEASUREMENT_DIR}{img_path.name}', dpi=1000)
+
         continue
 
 
         # shoulder
         front_points = estimate_front_shoulder_points(contour_front, keypoints_front[0, :, :])
-        refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
-        refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
 
         # neck
         front_points = estimate_front_neck_brd_points(contour_front, keypoints_front[0, :, :])
-        refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
-        refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_neck_bdr[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_neck_bdr[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
@@ -1019,8 +853,6 @@ if __name__ == '__main__':
 
         # armpit
         front_points = estimate_front_armpit(contour_front, curvatures_front, keypoints_front[0, :, :])
-        refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
-        refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
@@ -1050,8 +882,6 @@ if __name__ == '__main__':
 
         # hip
         front_hip_bdr = estimate_front_hip_bdr_points(contour_front, keypoints_front[0, :, :])
-        refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
-        refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_hip_bdr[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_hip_bdr[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_hip_bdr[0]), int_tuple(front_hip_bdr[1]), (0, 255, 255), thickness=LINE_THICKNESS)
@@ -1063,8 +893,6 @@ if __name__ == '__main__':
 
         # waist
         front_waist_bdr = estimate_front_waist_bdr_points(contour_front, keypoints_front[0, :, :])
-        refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
-        refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_waist_bdr[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_waist_bdr[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_waist_bdr[0]), int_tuple(front_waist_bdr[1]), (0, 255, 255), thickness=LINE_THICKNESS)
@@ -1076,8 +904,6 @@ if __name__ == '__main__':
 
         # inside leg
         front_points = estimate_front_inside_leg_bdr_points(contour_front, keypoints_front[0, :, :])
-        #refine_landmark_grabcut(img_front_org, front_points[0], fg_mask, bg_mask, sil_front, img_front)
-        #refine_landmark_grabcut(img_front_org, front_points[1], fg_mask, bg_mask, sil_front, img_front)
         # cv.drawMarker(img_front, int_tuple(front_points[0]), (255, 0, 0), thickness=10)
         # cv.drawMarker(img_front, int_tuple(front_points[1]), (255, 0, 0), thickness=10)
         cv.line(img_front, int_tuple(front_points[0]), int_tuple(front_points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
