@@ -1,6 +1,7 @@
 import sys
 import numpy as np
 import numpy.linalg as linalg
+import cv2 as cv
 
 OPENPOSE_PATH = '/home/khanhhh/data_1/projects/Oh/codes/body_measure/openpose/python/openpose'
 sys.path.append(OPENPOSE_PATH)
@@ -89,6 +90,37 @@ def extend_segment(p0, p1, percent):
     len1 = linalg.norm(p0_ - p1_)
     assert (len1 > len0)
     return p0_, p1_
+
+def normalize(vec):
+    len = linalg.norm(vec)
+    if np.isclose(len, 0.0):
+        return vec
+    else:
+        return (1.0 / len) * vec
+
+def orthor_dir(vec):
+    return np.array([vec[1], -vec[0]])
+
+def find_largest_contour(img_bi, app_type=cv.CHAIN_APPROX_TC89_L1):
+    cnt, contours, _ = cv.findContours(img_bi, cv.RETR_LIST, app_type)
+    largest_cnt = 0
+    largest_area = -1
+    for cnt in contours:
+        area = cv.contourArea(cnt)
+        if area > largest_area:
+            largest_area = area
+            largest_cnt = cnt
+    return largest_cnt.copy()
+
+from scipy.ndimage import filters
+def smooth_contour(contour, sigma=3):
+    contour_new = contour.astype(np.float32)
+    contour_new[:, 0, 0] = filters.gaussian_filter1d(contour[:, 0, 0], sigma=sigma)
+    contour_new[:, 0, 1] = filters.gaussian_filter1d(contour[:, 0, 1], sigma=sigma)
+    return contour_new.astype(np.int32)
+
+def int_tuple(vals):
+    return tuple(int(v) for v in vals.flatten())
 
 def is_valid_keypoint(keypoint):
     if keypoint[2] < KEYPOINT_THRESHOLD:
