@@ -84,7 +84,6 @@ def extend_segment(p0, p1, percent):
     assert (len1 > len0)
     return p0_, p1_
 
-
 def closest_point_segment(p0, p1, p):
     p10 = p1 - p0
     a = np.dot(p, p10) - np.dot(p0, p10)
@@ -168,6 +167,18 @@ def k_closest_point_points(point, points, k = 2):
     sorted_idxs = np.argsort(dsts)
     return points[sorted_idxs[:k]]
 
+def k_closest_intersections(p, p0, p1, contour_string, k = 1):
+    segment = LineString([p0, p1])
+    isect_points = segment.intersection(contour_string)
+    if isect_points.geom_type == 'Point':
+        return np.array([isect_points.x, isect_points.y]).reshape((1,2))
+    elif isect_points.geom_type == 'MultiPoint':
+        isect_points = np.array([(p.x, p.y) for p in isect_points])
+        points = k_closest_point_points(p, isect_points, k = k)
+        return np.vstack(points).reshape((k,2))
+    else:
+        return None
+
 def isect_segment_contour(contour, p0, p1):
     a = LineString([p0, p1])
     cnt_points = [contour[i].flatten() for i in range(len(contour))]
@@ -239,7 +250,6 @@ def estimate_front_points(contour_front, keypoints_front):
     hip_bdr_front_1 = closest_point_points(rhip_front, ipoints)
     return np.vstack([hip_bdr_front_0, hip_bdr_front_1])
 
-
 def estimate_side_hip_bdr_points(contour_side, keypoints_side):
     axis_side = axis_front_view(keypoints_side)
     axis_ortho = orthor_dir(axis_side)
@@ -266,31 +276,79 @@ def estimate_front_crotch(contour, keypoints):
                 crotch = p
     return crotch
 
-def estimate_front_waist_points(contour, keypoints):
-    axis_ortho = orthor_dir(axis_front_view(keypoints))
-
-    lshouder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
-    lelbow = keypoints[POSE_BODY_25_BODY_PART_IDXS['LElbow']][:2]
-    len = linalg.norm(lshouder - lelbow)
-
+def estimate_front_under_bust(contour, keypoints, use_upper_hand_ratio = False):
     midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
     neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
+    if use_upper_hand_ratio == False:
+        axis_ortho = orthor_dir(axis_front_view(keypoints))
+        lshouder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
+        lelbow = keypoints[POSE_BODY_25_BODY_PART_IDXS['LElbow']][:2]
+        len = linalg.norm(lshouder - lelbow)
 
-    dir = normalize(midhip - neck)
-    waist_center = neck + len * dir
+        dir = normalize(midhip - neck)
+        under_bust_pos = neck + len * dir
+
+        end_point_0 = under_bust_pos + len * axis_ortho
+        end_point_1 = under_bust_pos - len * axis_ortho
+        horizon_line = LineString([end_point_0, end_point_1])
+    else:
+        under_bust_pos = 0.5 * (midhip + neck)
+        dir = midhip - neck
+        end_point_0 = under_bust_pos + orthor_dir(dir)
+        end_point_1 = under_bust_pos - orthor_dir(dir)
+        horizon_line = LineString([end_point_0, end_point_1])
 
     contour_string = LineString([contour[i, 0, :] for i in range(contour.shape[0])])
+    isect_points = horizon_line.intersection(contour_string)
+    if isect_points.geom_type == 'MultiPoint':
+        isect_points = np.array([(p.x, p.y) for p in isect_points])
+        p0, p1 = k_closest_point_points(under_bust_pos, isect_points)
+        return np.vstack([p0, p1])
+    else:
+        print('estimate_front_waist_points: not enough intersection point found')
+        return np.vstack([under_bust_pos + 0.5 * orthor_dir(dir), under_bust_pos - 0.5 * orthor_dir(dir)])
 
-    end_point_0 = waist_center + len * axis_ortho
-    end_point_1 = waist_center - len * axis_ortho
+def estimate_front_waist(contour, keypoints):
+    midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
+    neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
+    waist_center = midhip + 0.25*(neck - midhip)
+    dir = midhip - neck
+    end_point_0 = waist_center + orthor_dir(dir)
+    end_point_1 = waist_center - orthor_dir(dir)
     horizon_line = LineString([end_point_0, end_point_1])
 
+    contour_string = LineString([contour[i, 0, :] for i in range(contour.shape[0])])
     isect_points = horizon_line.intersection(contour_string)
+    if isect_points.geom_type == 'MultiPoint':
+        isect_points = np.array([(p.x, p.y) for p in isect_points])
+        p0, p1 = k_closest_point_points(waist_center, isect_points)
+        return np.vstack([p0, p1])
+    else:
+        print('estimate_front_waist: not enough intersection point found')
+        return np.vstack([dir + 0.5 * orthor_dir(dir), dir - 0.5 * orthor_dir(dir)])
 
-    p0 = closest_point_points(waist_center + 0.1 * len * axis_ortho, isect_points)
-    p1 = closest_point_points(waist_center - 0.1 * len * axis_ortho, isect_points)
+def estimate_front_collar(contour, keypoints):
+    neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
+    nose = keypoints[POSE_BODY_25_BODY_PART_IDXS['Nose']][:2]
+    lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
+    rshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
+    half_length = linalg.norm(lshoulder-neck)
+    up_dir = normalize(nose - neck)
 
-    return np.vstack([p0, p1])
+    lpoint_ext = lshoulder + half_length*up_dir
+    rpoint_ext = rshoulder + half_length*up_dir
+
+    contour_string = LineString([contour[i, 0, :] for i in range(contour.shape[0])])
+    lcollar =  k_closest_intersections(neck, neck, lpoint_ext, contour_string, k=1)
+    rcollar =  k_closest_intersections(neck, neck, rpoint_ext, contour_string, k=1)
+    if lcollar.shape[0] == 1 and rcollar.shape[0] == 1:
+        collar_0 = lcollar if lcollar[0,1] > rcollar[0,1] else rcollar
+        p = nearest_points(Point(collar_0.flatten()), LineString([neck, nose]))[1]
+        p = np.array(p.coords[:])
+        collar_1 = p + (p - collar_0)
+        return np.vstack([collar_0, collar_1])
+    else:
+        print('estimate_front_collar: two intersection points needed')
 
 def estimate_side_waist_bdr_points(contour, keypoints):
     axis = axis_side_view(keypoints)
@@ -587,7 +645,6 @@ def estimate_side_largest_waist(contour, keypoints):
     midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
     hor_seg = orthor_dir(neck-midhip)
 
-
     start_p = midhip + 0.25 * (elbow - midhip)
     end_p = midhip + 0.75 * (elbow - midhip)
 
@@ -696,9 +753,6 @@ def estimate_front_elbow(contour, keypoints, left = False):
 
     return np.vstack([p0, p1])
 
-#def estimate_side_arm(contour, keypoints):
-#    return estimate_front_arm(contour, keypoints)
-
 def estimate_front_wrist(contour, keypoints, left = False):
     if left == True:
         elbow = keypoints[POSE_BODY_25_BODY_PART_IDXS['LElbow']][:2]
@@ -739,6 +793,19 @@ def load_body_template_contour(path):
     contour = ut.find_largest_contour(bi)
     return contour
 
+def estimate_front_collar_bust(collar, bust):
+    collar_0 = collar[0,:]
+    proj_on_bust = nearest_points(Point(collar_0), LineString([bust[0,:], bust[1,:]]))[1]
+    proj_on_bust = np.array(proj_on_bust.coords[:])
+    return np.vstack([collar_0, proj_on_bust])
+
+def estimate_front_collar_waist(collar, waist):
+    collar_0 = collar[1,:]
+    proj_on_waist = nearest_points(Point(collar_0), LineString([waist[0,:], waist[1,:]]))[1]
+    proj_on_waist = np.array(proj_on_waist.coords[:])
+    return np.vstack([collar_0, proj_on_waist])
+
+
 def estimate_front_measures(contour, keypoints):
     landmarks = {}
 
@@ -753,6 +820,10 @@ def estimate_front_measures(contour, keypoints):
     # neck
     points = estimate_front_neck_points(contour, keypoints[0, :, :])
     landmarks['Neck'] = points
+
+    # collar
+    points = estimate_front_collar(contour, keypoints[0, :, :])
+    landmarks['Collar'] = points
 
     # armpit
     points = estimate_front_armpit(contour, keypoints[0, :, :])
@@ -774,9 +845,22 @@ def estimate_front_measures(contour, keypoints):
     points = estimate_front_points(contour, keypoints[0, :, :])
     landmarks['Hip'] = points
 
-    # waist
-    points = estimate_front_waist_points(contour, keypoints[0, :, :])
+    # under bust
+    points = estimate_front_under_bust(contour, keypoints[0, :, :])
+    landmarks['UnderBust'] = points
+
+    # collar - bust
+    points = estimate_front_collar_bust(landmarks['Collar'], landmarks['Armpit'])
+    landmarks['CollarBust'] = points
+
+    #waist
+    points = estimate_front_waist(contour, keypoints[0, :, :])
     landmarks['Waist'] = points
+
+    # collar - waist
+    points = estimate_front_collar_waist(landmarks['Collar'], landmarks['Waist'])
+    landmarks['CollarWaist'] = points
+
 
     # inside leg
     points = estimate_front_inside_leg_points(contour, keypoints[0, :, :])
@@ -814,6 +898,56 @@ def estimate_side_measures(contour, keypoints_s):
 
     return landmarks
 
+def extend_rect(rect, percent, img_shape):
+    top_left_x = int(max(rect[0] - 0.5*percent[0]*rect[2], 0))
+    top_left_y = int(max(rect[1] - 0.5*percent[1]*rect[3], 0))
+    bot_right_x = int(min(rect[0] + rect[2] + 0.5*percent[0]*rect[2], img_shape[1]))
+    bot_right_y = int(min(rect[1] + rect[3] + 0.5*percent[1]*rect[3], img_shape[0]))
+    return (top_left_x, top_left_y, bot_right_x-top_left_x, bot_right_y-top_left_y)
+
+#pos_t: target position in image
+#pos_o: origin position in sub_image
+def embed_img_img(img, pos_t, sub_img, pos_o):
+    x = pos_t[0] - pos_o[0]
+    y = pos_t[1] - pos_o[1]
+    assert x >= 0 and y >= 0
+    w = sub_img.shape[1]
+    h = sub_img.shape[0]
+    img[y:y+h, x:x+w, :] = sub_img
+    return img
+
+def align_front_side_img(img_f, landmarks_f, img_s, landmarks_s):
+    #hack y_offset. need to large enough to contain two images
+    y_offset = int(0.1 * img_f.shape[0])
+
+    width_ext  = img_f.shape[1] + img_s.shape[1]
+    height_ext = img_f.shape[0] + 2*y_offset
+
+    img_f_s = np.zeros((height_ext, width_ext, 3), dtype=np.uint8)
+
+    anchor_0_f = landmarks_f['Height'][0].astype(np.int32)
+    anchor_0_embed_f = anchor_0_f.copy()
+    anchor_0_embed_f[1] += y_offset
+
+    img_f_s = embed_img_img(img_f_s, anchor_0_embed_f, img_f, anchor_0_f)
+
+    anchor_0_s = landmarks_s['Height'][0].astype(np.int32)
+    anchor_0_embed_s = anchor_0_s.copy()
+    anchor_0_embed_s[0] = anchor_0_s[0] + img_f.shape[1]
+    anchor_0_embed_s[1] = anchor_0_embed_f[1]
+    img_f_s = embed_img_img(img_f_s, anchor_0_embed_s, img_s, anchor_0_s)
+
+    cv.line(img_f_s, int_tuple(anchor_0_embed_f), int_tuple(anchor_0_embed_s), color=(0, 0, 255), thickness=5)
+
+    anchor_1_f = landmarks_f['Height'][1].astype(np.int32)
+    anchor_1_embed_f = anchor_0_embed_f + (anchor_1_f - anchor_0_f)
+
+    anchor_1_s = landmarks_s['Height'][1].astype(np.int32)
+    anchor_1_embed_s = anchor_0_embed_s + (anchor_1_s - anchor_0_s)
+    cv.line(img_f_s, int_tuple(anchor_1_embed_f), int_tuple(anchor_1_embed_s), color=(0, 0, 255), thickness=5)
+
+    return img_f_s
+
 if __name__ == '__main__':
     ROOT_DIR = '/home/khanhhh/data_1/projects/Oh/data/oh_mobile_images/'
     IMG_DIR = f'{ROOT_DIR}images/'
@@ -827,10 +961,21 @@ if __name__ == '__main__':
     for f in Path(OUT_MEASUREMENT_DIR).glob('*.*'):
         os.remove(f)
 
+
+    mapping = {}
+    mapping['side_IMG_1935.JPG'] = 'front_IMG_1928.JPG'
+    mapping['side_IMG_1941.JPG'] = 'front_IMG_1939.JPG'
+    mapping['side_8E2593C4-35E4-4B49-9B89-545AC906235C.jpg'] = 'front_9EF020C7-2CC9-4171-8378-60132015289D.jpg'
+
+    mapping_inv = {value:key for key, value in mapping.items()}
+
     front_img_info = {}
     for img_path in Path(IMG_DIR).glob('*.*'):
         if 'front_' not in str(img_path):
             continue
+        if img_path.name not in mapping_inv:
+            continue
+
         print(img_path)
 
         img_org = cv.imread(str(img_path))
@@ -839,22 +984,17 @@ if __name__ == '__main__':
         sil = load_silhouette(f'{SILHOUETTE_DIR}{img_path.name}', img_org)
         contour = ut.find_largest_contour(sil)
         cv.drawContours(img_pose, [contour], -1, color=(255,0,0), thickness=3)
-        img = img_pose
+        img_s = img_pose
 
         landmarks = estimate_front_measures(contour, keypoints)
         for name, points in landmarks.items():
-            cv.line(img, int_tuple(points[0]), int_tuple(points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
+            cv.line(img_s, int_tuple(points[0]), int_tuple(points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
 
-        front_img_info[img_path.name] = {'keypoints':keypoints, 'landmarks':landmarks}
+        front_img_info[img_path.name] = {'keypoints':keypoints, 'landmarks':landmarks, 'viz':img_s}
 
-        plt.imshow(img[:, :, ::-1])
+        plt.imshow(img_s[:, :, ::-1])
         #plt.show()
         plt.savefig(f'{OUT_MEASUREMENT_DIR}{img_path.name}', dpi=1000)
-
-    mapping = {}
-    mapping['side_IMG_1935.JPG'] = 'front_IMG_1928.JPG'
-    mapping['side_IMG_1941.JPG'] = 'front_IMG_1939.JPG'
-    mapping['side_8E2593C4-35E4-4B49-9B89-545AC906235C.jpg'] = 'front_9EF020C7-2CC9-4171-8378-60132015289D.jpg'
 
     for img_path in Path(IMG_DIR).glob('*.*'):
         if 'side_' not in str(img_path):
@@ -862,6 +1002,10 @@ if __name__ == '__main__':
 
         if img_path.name not in mapping:
             continue
+
+        #debug
+        #if 'side_IMG_1935' not in img_path.name:
+        #    continue
 
         front_name = mapping[img_path.name]
         if front_name not in front_img_info:
@@ -871,19 +1015,32 @@ if __name__ == '__main__':
         print(img_path)
 
         img_org = cv.imread(str(img_path))
-        keypoints_s, img_pose = find_pose(img_org)
-
         sil = load_silhouette(f'{SILHOUETTE_DIR}{img_path.name}', img_org)
         contour = ut.find_largest_contour(sil)
+
+        bb = cv.boundingRect(contour)
+        bb = extend_rect(bb, (0.2, 0.05), img_org.shape)
+
+        img_org = img_org[bb[1]:bb[1]+bb[3], bb[0]:bb[0]+bb[2],:].copy()
+        sil = sil[bb[1]:bb[1]+bb[3], bb[0]:bb[0]+bb[2]]
+        contour = ut.find_largest_contour(sil)
+
+        keypoints_s, img_pose = find_pose(img_org)
+
         cv.drawContours(img_pose, [contour], -1, color=(255,0,0), thickness=3)
-        img = img_pose
+        img_s = img_pose
 
         keypoints_f = front_img_info[front_name]['keypoints']
         landmarks_f = front_img_info[front_name]['landmarks']
+        img_f = front_img_info[front_name]['viz']
+
         landmarks_s = estimate_side_measures(contour, keypoints_s)
         for name, points in landmarks_s.items():
-            cv.line(img, int_tuple(points[0]), int_tuple(points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
+            cv.line(img_s, int_tuple(points[0]), int_tuple(points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
 
-        plt.imshow(img[:, :, ::-1])
-        plt.savefig(f'{OUT_MEASUREMENT_DIR}{img_path.name}', dpi=1000)
-        #plt.show()
+        img_f_s = align_front_side_img(img_f, landmarks_f, img_s, landmarks_s)
+
+        plt.subplot(111), plt.imshow(img_f_s[:, :, ::-1])
+        #plt.subplot(122), plt.imshow(img_s[:, :, ::-1])
+        #plt.savefig(f'{OUT_MEASUREMENT_DIR}{img_path.name}', dpi=1000)
+        plt.show()
