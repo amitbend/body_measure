@@ -119,6 +119,39 @@ def smooth_contour(contour, sigma=3):
     contour_new[:, 0, 1] = filters.gaussian_filter1d(contour[:, 0, 1], sigma=sigma)
     return contour_new.astype(np.int32)
 
+def contour_length(contour):
+    n_point = contour.shape[0]
+    l = 0.0
+    for i in range(contour.shape[0]):
+        i_nxt = (i + 1) % n_point
+        l += np.linalg.norm(contour[i,0,:] - contour[i_nxt, 0,:])
+    return l
+
+def resample_contour(contour, n_keep_point):
+    n_point = contour.shape[0]
+    new_contour = np.zeros((n_keep_point, 1, 2), dtype=np.int32)
+    cnt_len = contour_length(contour)
+    step_len  = cnt_len / float(n_keep_point)
+    acc_len = 0.0
+    cur_idx = 0
+    for i in range(1, n_point):
+        p       = contour[i,0,:]
+        p_prev  = contour[i-1,0,:]
+        cur_e_len = np.linalg.norm(p-p_prev)
+        if acc_len + cur_e_len >= step_len:
+            residual = cur_e_len - (step_len - acc_len)
+            inter_p = p_prev + (1-(residual/cur_e_len))* (p - p_prev)
+            new_contour[cur_idx,0,:]  = inter_p
+            cur_idx += 1
+            acc_len = residual
+        else:
+            acc_len += cur_e_len
+
+    for i in range(cur_idx, n_keep_point):
+        new_contour[i,0,:] = contour[n_point-1, 0, :]
+
+    return new_contour
+
 def int_tuple(vals):
     return tuple(int(v) for v in vals.flatten())
 
