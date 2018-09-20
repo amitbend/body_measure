@@ -6,8 +6,8 @@ import numpy.linalg as linalg
 import argparse
 from pathlib import Path
 from silhouette_deeplab import dl_extract_silhouette
-from openpose_util import is_valid_keypoint, is_valid_keypoint_1, pair_length, pair_dir, find_pose, orthor_dir, extend_segment, find_largest_contour, int_tuple
-from openpose_util import  POSE_BODY_25_BODY_PART_IDXS
+from util import is_valid_keypoint, is_valid_keypoint_1, pair_length, pair_dir, orthor_dir, extend_segment, find_largest_contour, int_tuple
+from util import  POSE_BODY_25_BODY_PART_IDXS
 from pose_to_trimap import gen_fg_bg_masks, head_center_estimate
 
 def extend_rect(rect, percent_w, percent_h):
