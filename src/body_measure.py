@@ -242,43 +242,6 @@ def estimate_front_under_midhip_tip_point(contour_string, keypoints):
                 crotch = p
     return np.array(crotch).flatten(0)
 
-def estimate_front_bust(torso_str, keypoints, bust_pos):
-    midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
-    neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
-
-    dir = midhip - neck
-    hor_p0 = bust_pos + orthor_dir(dir)
-    hor_p1 = bust_pos - orthor_dir(dir)
-    hor_line = LineString([hor_p0, hor_p1])
-
-    isect_points = hor_line.intersection(torso_str)
-    if isect_points.geom_type == 'MultiPoint':
-        isect_points = np.array([(p.x, p.y) for p in isect_points])
-        p0, p1 = k_closest_point_points(bust_pos, isect_points)
-        return np.vstack([p0, p1])
-    else:
-        print('estimate_front_bust: not enough intersection point found')
-        return np.vstack([bust_pos + 0.5 * orthor_dir(dir), bust_pos - 0.5 * orthor_dir(dir)])
-
-def estimate_front_waist(contour, keypoints):
-    midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
-    neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
-    waist_center = midhip + 0.25*(neck - midhip)
-    dir = midhip - neck
-    end_point_0 = waist_center + orthor_dir(dir)
-    end_point_1 = waist_center - orthor_dir(dir)
-    horizon_line = LineString([end_point_0, end_point_1])
-
-    contour_string = LineString([contour[i, 0, :] for i in range(contour.shape[0])])
-    isect_points = horizon_line.intersection(contour_string)
-    if isect_points.geom_type == 'MultiPoint':
-        isect_points = np.array([(p.x, p.y) for p in isect_points])
-        p0, p1 = k_closest_point_points(waist_center, isect_points)
-        return np.vstack([p0, p1])
-    else:
-        print('estimate_front_waist: not enough intersection point found')
-        return np.vstack([dir + 0.5 * orthor_dir(dir), dir - 0.5 * orthor_dir(dir)])
-
 def estimate_front_collar(contour, keypoints):
     neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     nose = keypoints[POSE_BODY_25_BODY_PART_IDXS['Nose']][:2]
@@ -382,6 +345,9 @@ def estimate_front_shoulder_points(contour_string, keypoints):
     seg_sd = LineString([sd_0, sd_1])
     sd_pos = seg_sd.intersection(seg_axis)
     sd_pos = np.array(sd_pos.coords).flatten()
+
+    min_shoulder_y = min(sd_0[1], sd_1[1])
+    sd_0[1] = sd_1[1] = min_shoulder_y
 
     return np.vstack([sd_0, sd_1]), sd_pos
 
@@ -487,7 +453,7 @@ def estimate_front_armpit(contour, keypoints):
 
     return np.vstack([larmpit, rarmpit])
 
-def estimate_side_crotch(contour_str, keypoints):
+def estimate_side_crotch(contour_str, keypoints, hor_dir = np.array([1,0])):
     if is_valid_keypoint_1(keypoints, 'LHip') and is_valid_keypoint_1(keypoints, 'LKnee'):
         hip  = keypoints[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
         knee   = keypoints[POSE_BODY_25_BODY_PART_IDXS['LKnee']][:2]
@@ -502,7 +468,6 @@ def estimate_side_crotch(contour_str, keypoints):
     n_point = len(contour_str.coords)
     steepest = 0
     win_size = 5
-    hor_dir = np.array([1,0])
     for i in range(n_point):
         cnt_p = contour_str.coords[i]
         if lower[1] < cnt_p[1] and cnt_p[1] < upper[1]:
@@ -522,7 +487,7 @@ def estimate_side_crotch(contour_str, keypoints):
     crotch_pos = nearest_points(seg, Point(steepest_cnt_p))[0]
     crotch_pos = np.array([crotch_pos.x, crotch_pos.y])
 
-    hor_seg = 1.5*orthor_dir(hip-knee)
+    hor_seg = 1.5*linalg.norm(hip-knee)*hor_dir
     p0 = crotch_pos + hor_seg
     p1 = crotch_pos - hor_seg
 
@@ -535,12 +500,12 @@ def estimate_side_crotch(contour_str, keypoints):
         return np.vstack([np.zeros(2), np.zeros(2)]), crotch_pos, 0.7
     return np.vstack([lower, upper])
 
-def estimate_side_shoulder(contour_str, keypoints):
+def estimate_side_shoulder(contour_str, keypoints, torso_hor_dir = np.array([1,0])):
     neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
-    dir = neck-midhip
-    p0 = neck + orthor_dir(dir)
-    p1 = neck - orthor_dir(dir)
+    dir = linalg.norm(neck-midhip)*torso_hor_dir
+    p0 = neck + dir
+    p1 = neck - dir
     ret, sd_0, sd_1 = cross_section_points(contour_str, neck, p0, p1)
     if ret == True:
         return np.vstack([sd_0, sd_1]), neck
@@ -548,7 +513,7 @@ def estimate_side_shoulder(contour_str, keypoints):
         print('estimate_side_shoulder: cannot find 2 enough intersection points')
         return np.vstack([neck + 0.3*orthor_dir(dir), neck - 0.3*orthor_dir(dir)]), neck
 
-def estimate_side_bust(contour_string, keypoints):
+def estimate_side_bust(contour_string, keypoints, torso_hor_dir = np.array([1,0])):
     neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
 
@@ -572,7 +537,7 @@ def estimate_side_bust(contour_string, keypoints):
     bust_pos = nearest_points(seg, Point(furthest_slice_pos))[0]
     bust_pos = np.array([bust_pos.x, bust_pos.y])
 
-    hor_seg = orthor_dir(neck-midhip)
+    hor_seg = linalg.norm(neck-midhip) * torso_hor_dir
     p0 = bust_pos + hor_seg
     p1 = bust_pos - hor_seg
 
@@ -583,22 +548,23 @@ def estimate_side_bust(contour_string, keypoints):
         print('estimate_side_under_bust: not enough 2 intersection points found')
         return np.vstack([np.zeros(2), np.zeros(2)]), 0
 
-def estimate_side_armscye(contour_str, bust, shoulder):
+def estimate_side_armscye(contour_str, bust, shoulder, torso_hor_dir = np.array([1,0])):
     armscye_pos = bust + 1.0/3.0 * (shoulder - bust)
-    hor_dir = orthor_dir(shoulder-bust)
-    p0 = armscye_pos + 5*hor_dir
-    p1 = armscye_pos - 5*hor_dir
+    hor_ext_seg = linalg.norm(shoulder-bust)*5*torso_hor_dir
+    p0 = armscye_pos + hor_ext_seg
+    p1 = armscye_pos - hor_ext_seg
     ret, sd_0, sd_1 = cross_section_points(contour_str, armscye_pos, p0, p1)
     if ret == True:
         return np.vstack([sd_0, sd_1]), armscye_pos
     else:
         print('estimate_side_armscye: cannot find 2 enough intersection points')
-        return np.vstack([armscye_pos + hor_dir, armscye_pos - hor_dir]), armscye_pos
+        len = 0.5*linalg.norm(shoulder-bust)
+        return np.vstack([armscye_pos + len*torso_hor_dir, armscye_pos - len*torso_hor_dir]), armscye_pos
 
-def estimate_side_under_bust(contour_string, keypoints, bust_pos):
+def estimate_side_under_bust(contour_string, keypoints, bust_pos, torso_hor_dir = np.array([1,0])):
     neck = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     midhip = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
-    hor_seg = orthor_dir(neck-midhip)
+    hor_seg = linalg.norm(neck-midhip)*torso_hor_dir
 
     below_under_bust = midhip + 0.333 * (neck - midhip)
 
@@ -626,46 +592,29 @@ def estimate_side_under_bust(contour_string, keypoints, bust_pos):
         print('estimate_side_under_bust: not enough 2 intersection points found')
         return np.vstack([np.zeros(2), np.zeros(2)]), under_bust_p
 
-def estimate_side_hip(contour, keypoints):
-    if is_valid_keypoint_1(keypoints, 'LHip') and is_valid_keypoint_1(keypoints, 'LKnee'):
-        hip  = keypoints[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
-        knee   = keypoints[POSE_BODY_25_BODY_PART_IDXS['LKnee']][:2]
-        dir = orthor_dir(knee - hip)
-    elif is_valid_keypoint_1(keypoints, 'RHip') and is_valid_keypoint_1(keypoints, 'RKnee'):
-        hip  = keypoints[POSE_BODY_25_BODY_PART_IDXS['RHip']][:2]
-        knee   = keypoints[POSE_BODY_25_BODY_PART_IDXS['RKnee']][:2]
-        dir = orthor_dir(knee - hip)
-    elif is_valid_keypoint_1(keypoints, 'MidHip') and is_valid_keypoint_1(keypoints, 'Neck'):
-        hip   = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
-        neck  = keypoints[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
-        dir = orthor_dir(neck - hip)
-    else:
-        dir = np.array([500,0])
+def estimate_front_height(contour_str, keypoints_f):
+    lowest = 99999
+    for p in contour_str.coords:
+        if p[1] < lowest:
+            lowest = p[1]
+            head_tip = p
 
-    p0 = hip + 0.7 * dir
-    p1 = hip - 0.7 * dir
+    lhip = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
+    rhip = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['RHip']][:2]
+    lknee  = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LKnee']][:2]
+    lankle = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LAnkle']][:2]
+    lheel = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LHeel']][:2]
 
-    contour_string = LineString([contour[i,0,:] for i in range(contour.shape[0])])
-    isect_points = LineString([p0, p1]).intersection(contour_string)
-    if isect_points.geom_type == 'MultiPoint':
-        points = np.array([(p.x, p.y) for p in isect_points])
-        p0, p1 = k_closest_point_points(hip, points , k=2)
-        return np.vstack([p0, p1])
-    else:
-        print('estimate_side_hip: up to two intersection point needed!')
-        return np.vstack([p0, p1])
+    on_hip_level = nearest_points(Point(head_tip), LineString([lhip, rhip]))[1]
+    on_hip_level = np.array(on_hip_level ).flatten()
 
-def estimate_side_waist(contour_str, bust_pos, crotch_pos):
-    dir = crotch_pos - bust_pos
-    waist =  0.5*(crotch_pos + bust_pos)
-    p0 = waist + 1.5*orthor_dir(dir)
-    p1 = waist - 1.5*orthor_dir(dir)
-    ret, p0, p1 = cross_section_points(contour_str, waist, p0, p1)
-    if ret == True:
-        return np.vstack([p0, p1])
-    else:
-        print('estimate_side_waist: up to two intersection point needed!')
-        return np.vstack([p0, p1])
+    height = linalg.norm(on_hip_level - head_tip)
+    height += linalg.norm(lknee - lhip)
+    height += linalg.norm(lankle - lknee)
+    height += linalg.norm(lheel - lankle)
+
+    return np.vstack([head_tip, head_tip+height*np.array([0,1])])
+    #return np.vstack([head_tip, on_hip_level])
 
 def estimate_side_height(contour, keypoints):
     lowest = 99999
@@ -679,7 +628,9 @@ def estimate_side_height(contour, keypoints):
         lankle = keypoints[POSE_BODY_25_BODY_PART_IDXS['LHeel']][:2]
         rankle  = keypoints[POSE_BODY_25_BODY_PART_IDXS['RHeel']][:2]
         bottom = 0.5 * (lankle + rankle)
-        return np.vstack([head_tip, bottom])
+        #return np.vstack([head_tip, bottom])
+        height = linalg.norm(bottom - head_tip)
+        return np.vstack([head_tip, head_tip + height * np.array([0, 1])])
     else:
         contour_string = LineString([contour[i, 0, :] for i in range(contour.shape[0])])
         p0 = head_tip
@@ -691,7 +642,9 @@ def estimate_side_height(contour, keypoints):
                 lowest = p.y
                 bottom = (p.x, p.y)
 
-        return np.vstack([head_tip, bottom])
+        height = linalg.norm(bottom - head_tip)
+        return np.vstack([head_tip, head_tip + height * np.array([0, 1])])
+        #return np.vstack([head_tip, bottom])
 
 def estimate_front_elbow(contour, keypoints, left = False):
     if left == True:
@@ -798,25 +751,16 @@ def extract_leg_contour(contour_str_f, keypoints_f, crotch_pos, left = True):
     return LineString(leg_points)
 
 # note: axis should be long enough to cover the largest hor slice of torso
-def front_torso_slice(torso_str_f, pos, axis):
-    p0 = pos + 1.5*orthor_dir(axis)
-    p1 = pos - 1.5*orthor_dir(axis)
-    ret, slc_p0, slc_p1 = cross_section_points(torso_str_f, pos, p0, p1)
+def calc_contour_slice(contour_str, pos, hor_seg):
+    p0 = pos + hor_seg
+    p1 = pos - hor_seg
+    ret, slc_p0, slc_p1 = cross_section_points(contour_str, pos, p0, p1, nearest=True)
     if ret == True:
         return True, np.vstack([slc_p0, slc_p1])
     else:
         return False, np.vstack([p0, p1])
 
-def estimate_leg_cross_section(contour_leg_str, pos, hor_axis, ext_len):
-    p0 = pos + ext_len * hor_axis
-    p1 = pos - ext_len * hor_axis
-    ret, isct_0, isct_1 = cross_section_points(contour_leg_str, pos, p0, p1, nearest=True)
-    if ret:
-        return True, np.vstack([isct_0, isct_1])
-    else:
-        return False, np.vstack([p0, p1])
-
-def estimate_leg_landmark_slices(contour_str_f, keypoints_f, crotch_pos_f, left_side, landmarks_f):
+def estimate_front_leg_landmark_slices(contour_str_f, keypoints_f, crotch_pos_f, left_side, landmarks_f):
     contour_leg_str_f =  extract_leg_contour(contour_str_f, keypoints_f, crotch_pos_f, left=left_side)
 
     if left_side: prefix = 'L'
@@ -825,27 +769,28 @@ def estimate_leg_landmark_slices(contour_str_f, keypoints_f, crotch_pos_f, left_
     hip =  keypoints_f[POSE_BODY_25_BODY_PART_IDXS[prefix  +'Hip']][:2]
     knee =  keypoints_f[POSE_BODY_25_BODY_PART_IDXS[prefix +'Knee']][:2]
     ankle =  keypoints_f[POSE_BODY_25_BODY_PART_IDXS[prefix+'Ankle']][:2]
-    dir_hip_knee = normalize(hip - knee)
-    dir_knee_ankle = normalize(knee - ankle)
+    #dir_hip_knee = normalize(hip - knee)
+    #dir_knee_ankle = normalize(knee - ankle)
+    leg_hor_dir = np.array([1,0])
     ext_len = linalg.norm(hip-knee)
 
     crotch_pos_on_leg_f = nearest_points(Point(crotch_pos_f), LineString([hip, knee]))[1]
     crotch_pos_on_leg_f = np.array(crotch_pos_on_leg_f).flatten()
 
-    ret, points = estimate_leg_cross_section(contour_leg_str_f, knee, orthor_dir(dir_knee_ankle), ext_len)
+    ret, points = calc_contour_slice(contour_leg_str_f, knee, ext_len*leg_hor_dir)
     if ret: landmarks_f[prefix + 'Knee'] = points
 
     pos = 0.5*(crotch_pos_on_leg_f+knee)
-    ret, points = estimate_leg_cross_section(contour_leg_str_f, pos, orthor_dir(dir_hip_knee), ext_len)
-    if ret: landmarks_f[prefix + 'MidUpperLeg'] = points
+    ret, points = calc_contour_slice(contour_leg_str_f, pos, ext_len*leg_hor_dir)
+    if ret: landmarks_f['Aux_' + prefix + 'Thigh'] = points
 
     pos = ankle + 2.0/3.0 *(knee - ankle)
-    ret, points = estimate_leg_cross_section(contour_leg_str_f, pos, orthor_dir(dir_knee_ankle), ext_len)
+    ret, points = calc_contour_slice(contour_leg_str_f, pos, ext_len*leg_hor_dir)
     if ret: landmarks_f[prefix + 'BigUnderLeg'] = points
 
     #move anke a bit higher to avoid perspective distortion effect; otherwise, we will measure cross section of the sandle
     pos = ankle + 0.1 * (knee - ankle)
-    ret, points = estimate_leg_cross_section(contour_leg_str_f, pos, orthor_dir(dir_knee_ankle), ext_len)
+    ret, points = calc_contour_slice(contour_leg_str_f, pos, ext_len*leg_hor_dir)
     if ret: landmarks_f[prefix + 'Ankle'] = points
 
 def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
@@ -859,6 +804,16 @@ def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
     #side image
     neck_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     midhip_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
+
+    if is_valid_keypoint_1(keypoints_s, 'LHip') and is_valid_keypoint_1(keypoints_s, 'LKnee'):
+        hip = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
+        knee = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['LKnee']][:2]
+    else:
+        hip = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['RHip']][:2]
+        knee = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['RKnee']][:2]
+
+    torso_hor_seg_s = linalg.norm(neck_s - midhip_s)*np.array([1,0])
+    thigh_hor_seg_s = linalg.norm(knee - hip)*np.array([1,0])
 
     points = estimate_side_height(contour_s, keypoints_s)
     landmarks_s['Height'] = points
@@ -875,22 +830,51 @@ def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
     points, under_bust_pos_s= estimate_side_under_bust(contour_str_s, keypoints_s, bust_pos_s)
     landmarks_s['UnderBust'] = points
 
-    points = estimate_side_hip(contour_s, keypoints_s)
-    landmarks_s['Hip'] = points
+    is_ok, points =  calc_contour_slice(contour_str_s, hip, 2*torso_hor_seg_s)
+    hip_pos_s = hip.copy()
+    if is_ok: landmarks_s['Hip'] = points
 
     points, crotch_pos_s, crotch_ratio_s = estimate_side_crotch(contour_str_s, keypoints_s)
     landmarks_s['Crotch'] = points
 
-    points = estimate_side_waist(contour_str_s, bust_pos_s, crotch_pos_s)
-    landmarks_s['Waist'] = points
+    waist_pos_s =  0.5*(crotch_pos_s + bust_pos_s)
+    #points, waist_pos_s = estimate_side_waist(contour_str_s, bust_pos_s, crotch_pos_s)
+    is_ok, points = calc_contour_slice(contour_str_s, waist_pos_s, torso_hor_seg_s)
+    if is_ok: landmarks_s['Waist'] = points
+
+    hip_waist_pos_0_s = 0.5*(hip_pos_s + waist_pos_s)
+    is_ok, points = calc_contour_slice(contour_str_s, hip_waist_pos_0_s, torso_hor_seg_s)
+    if is_ok: landmarks_s['Aux_Hip_Waist_0'] = points
+
+    waist_under_bust_pos_0_s = 0.5*(under_bust_pos_s + waist_pos_s)
+    is_ok, points =  calc_contour_slice(contour_str_s, waist_under_bust_pos_0_s, torso_hor_seg_s)
+    if is_ok: landmarks_s['Aux_Waist_UnderBust_0'] = points
+
+    armcye_shoulder_0_s = 0.5*(armscye_pos_s +  shoulder_pos_s)
+    is_ok, points =  calc_contour_slice(contour_str_s, armcye_shoulder_0_s, torso_hor_seg_s)
+    if is_ok: landmarks_s['Aux_Armscye_Shoulder_0'] = points
+
+    aux_crotch_hip_0_s = 0.5*(crotch_pos_s+  hip_pos_s)
+    is_ok, points =  calc_contour_slice(contour_str_s, aux_crotch_hip_0_s, thigh_hor_seg_s)
+    if is_ok: landmarks_s['Aux_Crotch_Hip_0'] = points
+
+    pos = 0.5*(knee+crotch_pos_s)
+    ret, points = calc_contour_slice(contour_str_s, pos, thigh_hor_seg_s)
+    if ret: landmarks_s['Aux_Thigh_0'] = points
+
+    is_ok, points =  calc_contour_slice(contour_str_s, knee, thigh_hor_seg_s)
+    if is_ok: landmarks_s['Knee'] = points
 
     ###############################################################################################
     #front image
     neck_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     midhip_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
+    lshouder_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
+    rshouder_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
+    torso_hor_seg_f = 2*linalg.norm(lshouder_f - rshouder_f)*np.array([1,0])
 
     # height
-    points = estimate_side_height(contour_f, keypoints_f)
+    points = estimate_front_height(contour_str_f, keypoints_f)
     landmarks_f['Height'] = points
 
     # neck
@@ -905,8 +889,12 @@ def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
     armpits_f = estimate_front_armpit_1(contour_str_f, keypoints_f)
     armpit_l_f = armpits_f[0]
     armpit_r_f = armpits_f[1]
-    #landmarks_f['Armpit'] = armpits_f
 
+    # crotch
+    ret, points, crotch_pos_f = estimate_front_crotch(contour_str_f, keypoints_f, crotch_ratio_s)
+    if ret: landmarks_f['Crotch'] = points
+
+    ###################################################################
     # torso extraction
     torso_str_f = extract_torso_contour(contour_str_f, keypoints_f, armpit_l_f, armpit_r_f)
 
@@ -914,62 +902,76 @@ def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
     # regress under bust position from the under bust postioin ration in the side image
     under_bust_ratio_s = linalg.norm((under_bust_pos_s - midhip_s)) / linalg.norm(neck_s - midhip_s)
     # it seems that neck point in side image is equavalent to shoulder point in front image, not the neck point in the front image
-    under_bust_pos = midhip_f + under_bust_ratio_s * (shoulder_pos_f - midhip_f)
-    is_ok, points =  front_torso_slice(torso_str_f, under_bust_pos, neck_f - midhip_f)
+    under_bust_pos_f = midhip_f + under_bust_ratio_s * (shoulder_pos_f - midhip_f)
+    is_ok, points =  calc_contour_slice(torso_str_f, under_bust_pos_f, torso_hor_seg_f)
     if is_ok: landmarks_f['UnderBust'] = points
 
     # bust
     bust_ratio_s = linalg.norm((bust_pos_s - midhip_s)) / linalg.norm(neck_s - midhip_s)
-    bust_pos = midhip_f + bust_ratio_s * (shoulder_pos_f - midhip_f)
-    is_ok, points =  front_torso_slice(torso_str_f, bust_pos, neck_f - midhip_f)
+    bust_pos_f = midhip_f + bust_ratio_s * (shoulder_pos_f - midhip_f)
+    is_ok, points =  calc_contour_slice(torso_str_f, bust_pos_f, torso_hor_seg_f)
     if is_ok: landmarks_f['Bust'] = points
 
     armscye_ratio_s = linalg.norm((armscye_pos_s - midhip_s)) / linalg.norm(neck_s - midhip_s)
     armcye_pos_f = midhip_f + armscye_ratio_s * (shoulder_pos_f - midhip_f)
-    is_ok, points =  front_torso_slice(torso_str_f, armcye_pos_f, neck_f - midhip_f)
+    is_ok, points =  calc_contour_slice(torso_str_f, armcye_pos_f, torso_hor_seg_f)
     landmarks_f['Armscye'] = points
+
+    #waist
+    waist_pos_f = 0.5*(crotch_pos_f + bust_pos_f)
+    is_ok, points =  calc_contour_slice(torso_str_f, waist_pos_f, torso_hor_seg_f)
+    if is_ok: landmarks_f['Waist'] = points
+
+    # auxilary slice on torso
+    hip_waist_pos_0 = 0.5*(midhip_f+ waist_pos_f)
+    is_ok, points =  calc_contour_slice(torso_str_f, hip_waist_pos_0, torso_hor_seg_f)
+    if is_ok: landmarks_f['Aux_Hip_Waist_0'] = points
+
+    waist_under_bust_pos_0 = 0.5*(under_bust_pos_f + waist_pos_f)
+    is_ok, points =  calc_contour_slice(torso_str_f, waist_under_bust_pos_0, torso_hor_seg_f)
+    if is_ok: landmarks_f['Aux_Waist_UnderBust_0'] = points
+
+    armscye_shoulder_0 = 0.5*(armcye_pos_f +  shoulder_pos_f)
+    is_ok, points =  calc_contour_slice(contour_str_f, armscye_shoulder_0, torso_hor_seg_f)
+    if is_ok: landmarks_f['Aux_Armscye_Shoulder_0'] = points
+
+    aux_crotch_hip_0_f = 0.5*(crotch_pos_f+  midhip_f)
+    is_ok, points =  calc_contour_slice(contour_str_f, aux_crotch_hip_0_f, torso_hor_seg_f)
+    if is_ok: landmarks_f['Aux_Crotch_Hip_0'] = points
 
     # collar
     points = estimate_front_collar(contour_f, keypoints_f)
     landmarks_f['Collar'] = points
 
-    # left elbow
-    points = estimate_front_elbow(contour_f, keypoints_f, left=True)
-    landmarks_f['LElbow'] = points
-    points = estimate_front_elbow(contour_f, keypoints_f, left=False)
-    landmarks_f['RElbow'] = points
-
-    #wrist
-    points = estimate_front_wrist(contour_f, keypoints_f, left=True)
-    landmarks_f['LWrist'] = points
-    points = estimate_front_wrist(contour_f, keypoints_f, left=False)
-    landmarks_f['RWrist'] = points
+    # collar - bust
+    points = estimate_front_collar_bust(landmarks_f['Collar'], landmarks_f['Bust'] )
+    landmarks_f['CollarBust'] = points
 
     # hip
     points = estimate_front_hip(contour_f, keypoints_f)
     landmarks_f['Hip'] = points
 
-    # collar - bust
-    points = estimate_front_collar_bust(landmarks_f['Collar'], armpits_f)
-    landmarks_f['CollarBust'] = points
-
-    #waist
-    points = estimate_front_waist(contour_f, keypoints_f)
-    landmarks_f['Waist'] = points
-
     # collar - waist
     points = estimate_front_collar_waist(landmarks_f['Collar'], landmarks_f['Waist'])
     landmarks_f['CollarWaist'] = points
 
+    ##############################################
+    # arm
+    # left elbow
+    points = estimate_front_elbow(contour_f, keypoints_f, left=True)
+    landmarks_f['LElbow'] = points
+
+    #wrist
+    points = estimate_front_wrist(contour_f, keypoints_f, left=True)
+    landmarks_f['LWrist'] = points
+
+    ##########################################################
     # inside leg
     points = estimate_front_inside_leg_points(contour_f, keypoints_f)
     landmarks_f['InsideLeg'] = points
 
-    # crotch
-    ret, points, crotch_pos_f = estimate_front_crotch(contour_str_f, keypoints_f, crotch_ratio_s)
-    if ret: landmarks_f['Crotch'] = points
-
-    estimate_leg_landmark_slices(contour_str_f, keypoints_f, crotch_pos_f, left_side=True,  landmarks_f=landmarks_f)
+    ##########################################################
+    estimate_front_leg_landmark_slices(contour_str_f, keypoints_f, crotch_pos_f, left_side=True, landmarks_f=landmarks_f)
     #estimate_leg_landmark_slices(contour_str_f, keypoints_f, crotch_pos_f, left_side=False, landmarks_f=landmarks_f)
 
     return landmarks_f, landmarks_s
@@ -1054,6 +1056,24 @@ def fix_silhouette(sil):
     sil = cv.morphologyEx(sil, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, ksize=(3,3)))
     return sil
 
+def normalize_measurement_based_on_height(height, landmarks_f, landmarks_s):
+    height_points_f = landmarks_f['Height']
+    height_points_s = landmarks_s['Height']
+    height_px_f = linalg.norm(height_points_f[0] - height_points_f[1])
+    height_px_s = linalg.norm(height_points_s[0] - height_points_s[1])
+    ratio_f = height/height_px_f
+    ratio_s = height/height_px_s
+
+    measure_f = {}
+    for id, points in landmarks_f.items():
+        measure_f[id] = ratio_f * linalg.norm(points[0]-points[1])
+
+    measure_s = {}
+    for id, points in landmarks_s.items():
+        measure_s[id] = ratio_s * linalg.norm(points[0]-points[1])
+
+    return measure_f, measure_s
+
 if __name__ == '__main__':
     ROOT_DIR = '/home/khanhhh/data_1/projects/Oh/data/oh_mobile_images/'
     IMG_DIR = f'{ROOT_DIR}images/'
@@ -1073,6 +1093,11 @@ if __name__ == '__main__':
     mapping['side_8E2593C4-35E4-4B49-9B89-545AC906235C.jpg'] = 'front_9EF020C7-2CC9-4171-8378-60132015289D.jpg'
 
     mapping_inv = {value:key for key, value in mapping.items()}
+
+    heights = {}
+    heights['side_IMG_1935.JPG'] =  150
+    heights['side_IMG_1941.JPG'] = 160
+    heights['side_8E2593C4-35E4-4B49-9B89-545AC906235C.jpg'] = 158
 
     #collect front and side image pairs
     all_img_paths = [path for path in Path(IMG_DIR).glob('*.*')]
@@ -1122,15 +1147,31 @@ if __name__ == '__main__':
         G_debug_img_f = img_pose_f
         #
         landmarks_f,  landmarks_s = estimate_landmark_slices(contour_f, keypoints_f[0, :, :], contour_s, keypoints_s[0, :, :])
-        #
+
+        height = heights[path_s.name]
+        measure_f, measure_s = normalize_measurement_based_on_height(height, landmarks_f, landmarks_s)
+
         for name, points in landmarks_f.items():
-             cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
+            if 'Aux_' not in name:
+                cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
         #
         for name, points in landmarks_s.items():
-             cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (0, 255, 255), thickness=LINE_THICKNESS)
+            if 'Aux_' not in name:
+                cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
+
+        for name, points in landmarks_f.items():
+            if 'Aux_' in name:
+                cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
+        #
+        for name, points in landmarks_s.items():
+            if 'Aux_' in name:
+                cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
+
+        cv.line(img_pose_f, int_tuple(landmarks_f['Height'][0]), int_tuple(landmarks_f['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS+2)
+        cv.line(img_pose_s, int_tuple(landmarks_s['Height'][0]), int_tuple(landmarks_s['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS+2)
 
         plt.subplot(121), plt.imshow(img_pose_f[:,:,::-1])
         plt.subplot(122), plt.imshow(img_pose_s[:,:,::-1])
-        plt.show()
+        plt.savefig(f'{OUT_MEASUREMENT_DIR}{path_f.name}', dpi=1000)
 
 

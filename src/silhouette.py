@@ -3,8 +3,9 @@ import cv2 as cv
 import os
 import numpy as np
 import numpy.linalg as linalg
-import matplotlib.pyplot as plt
+import argparse
 from pathlib import Path
+from silhouette_deeplab import dl_extract_silhouette
 from openpose_util import is_valid_keypoint, is_valid_keypoint_1, pair_length, pair_dir, find_pose, orthor_dir, extend_segment, find_largest_contour, int_tuple
 from openpose_util import  POSE_BODY_25_BODY_PART_IDXS
 from pose_to_trimap import gen_fg_bg_masks, head_center_estimate
@@ -277,55 +278,67 @@ def fix_silhouette(sil):
     sil = cv.morphologyEx(sil, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, ksize=(3,3)))
     return sil
 
-if __name__ == '__main__':
-    ROOT_DIR = '/home/khanhhh/data_1/projects/Oh/data/oh_mobile_images/'
-    IMG_DIR = f'{ROOT_DIR}images/'
-    SILHOUETTE_DIR = f'{ROOT_DIR}silhouette_deeplab/'
-    OUT_SILHOUETTE_DIR = f'{ROOT_DIR}silhouette_refined/'
+def extract_silhouette(img_path, keypoints):
+    if 'side_' in str(img_path):
+        is_front_img = False
+    elif 'front_' in str(img_path):
+        is_front_img = True
+    else:
+        print('not a front or side image. please attach annation: front_ or side_ to front of the image name', file=sys.stderr)
 
-    MARKER_SIZE = 5
-    MARKER_THICKNESS = 5
-    LINE_THICKNESS = 2
+    img = cv.imread(str(img_path))
+    img_org = img.copy()
+    #img_pose = cv.imread(f'{POSE_DIR}{img_path.stem}.png')
+
+    sil = dl_extract_silhouette(str(img_path))
+
+    bg_mask = cv.morphologyEx(sil, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (10, 10)))
+
+    sure_fg_mask, _ = gen_fg_bg_masks(img, keypoints, front_view=True)
+    sure_fg_mask = (sure_fg_mask == 255)
+    sure_bg_mask = (bg_mask != 255)
+
+    contour = find_largest_contour(sil, cv.CHAIN_APPROX_TC89_L1)
+
+    sil = cv.morphologyEx(sil, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
+    if is_front_img:
+        sil_refined = refine_silhouette_front_img(img_org, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :], img)
+    else:
+        sil_refined = refine_silhouette_side_img(img_org, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :], img)
+
+    contour_refined = find_largest_contour(sil_refined, cv.CHAIN_APPROX_TC89_L1)
+    sil_final = np.zeros_like(sil)
+    cv.fillPoly(sil_final, pts=[contour_refined], color=(255, 255, 255))
+    return  sil_final
+
+if __name__ == '__main__':
+    IMG_DIR = '../data/images/'
+    OUT_SILHOUETTE_DIR = '../data/silhouette/'
+    POSE_DIR = '../data/pose/'
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-i", "--image_dir", required=True, help="image folder")
+    ap.add_argument("-p", "--pose_dir", required=True,  help="pose folder")
+    ap.add_argument("-o", "--output_dir", required=True, help='output silhouette dir')
+    args = vars(ap.parse_args())
+    IMG_DIR = args['image_dir']
+    POSE_DIR = args['pose_dir']
+    OUT_SILHOUETTE_DIR = args['output_dir']
 
     for f in Path(OUT_SILHOUETTE_DIR).glob('*.*'):
         os.remove(f)
 
     for img_path in Path(IMG_DIR).glob('*.*'):
         print(img_path)
-        if 'side_' in str(img_path):
-            fname = img_path.name.replace("side_","")
-            is_front_img = False
-        elif 'front_' in str(img_path):
-            fname = img_path.name.replace("front_","")
-            is_front_img = True
-        else:
-            print('not a front or side image. please attach annation: front_ or side_ to front of the image name')
+        pose_path = f'{POSE_DIR}{img_path.stem}.npy'
+        if not os.path.isfile(pose_path):
+            print('\tmissing keypoint file', file=sys.stderr)
+            continue
 
-        img = cv.imread(str(img_path))
-        img_org = img.copy()
-        keypoints, img_pose = find_pose(img)
+        keypoints = np.load(pose_path)
+        silhouette = extract_silhouette(img_path, keypoints)
+        cv.imwrite(f'{OUT_SILHOUETTE_DIR}/{img_path.name}', silhouette)
 
-        sil = load_silhouette(f'{SILHOUETTE_DIR}{fname}', img)
-        sil = fix_silhouette(sil)
-
-        bg_mask = cv.morphologyEx(sil, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (30,30)))
-
-        sure_fg_mask, _ = gen_fg_bg_masks(img, keypoints, front_view=True)
-        sure_fg_mask = (sure_fg_mask == 255)
-        sure_bg_mask = (bg_mask != 255)
-
-        contour = find_largest_contour(sil, cv.CHAIN_APPROX_TC89_L1)
-
-        sil= cv.morphologyEx(sil, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
-        if is_front_img:
-            sil_refined = refine_silhouette_front_img(img_org, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :], img)
-        else:
-            sil_refined = refine_silhouette_side_img(img_org, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :], img)
-
-        contour_refined = find_largest_contour(sil_refined, cv.CHAIN_APPROX_TC89_L1)
-        sil_final = np.zeros_like(sil)
-        cv.fillPoly(sil_final, pts=[contour_refined], color=(255,255,255))
-        cv.imwrite(f'{OUT_SILHOUETTE_DIR}{img_path.name}', sil_final)
         continue
 
         # visualization
@@ -336,6 +349,6 @@ if __name__ == '__main__':
         plt.subplot(121), plt.imshow(img[:, :, ::-1])
         plt.subplot(122), plt.imshow(img_1[:, :, ::-1])
         #plt.show()
-        plt.savefig(f'{OUT_MEASUREMENT_DIR}{img_path.name}', dpi=1000)
+        plt.savefig(f'{OUT_MEASUREMENT_DIR}/{img_path.name}', dpi=1000)
 
 

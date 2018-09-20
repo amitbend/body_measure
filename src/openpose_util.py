@@ -1,9 +1,28 @@
 import sys
 import numpy as np
 import numpy.linalg as linalg
+import os.path
 import cv2 as cv
+import platform
 
-OPENPOSE_PATH = '/home/khanhhh/data_1/projects/Oh/codes/body_measure/openpose/python/openpose'
+OPENPOSE_PATH = '../openpose/python/openpose'
+OPENPOSE_MODEL_PATH = '../openpose/models/'
+
+if platform.system() == 'Linux':
+    if not os.path.isfile('../openpose/python/openpose/_openpose.so'):
+        print('openpen pose is not available: missing _openpose.so', file=sys.stderr)
+elif platform.system() == 'Windows':
+    if not os.path.isfile('../openpose/python/openpose/_openpose.dll'):
+        print('openpen pose is not available: missing _openpose.dll', file=sys.stderr)
+else:
+    print('not support os', file=sys.stderr)
+
+if not os.path.isfile('../openpose/python/openpose/openpose.py'):
+    print('openpen pose is not available: missing openpose.py', file=sys.stderr)
+
+if not os.path.isfile('../openpose/models/pose/body_25/pose_iter_584000.caffemodel'):
+    print('missing caffemodel pose_iter_584000.caffemodel', file=sys.stderr)
+
 sys.path.append(OPENPOSE_PATH)
 try:
     from openpose import *
@@ -49,9 +68,6 @@ POSE_BODY_25_BODY_PARTS = \
 POSE_BODY_25_BODY_PART_IDXS = {v: k for k, v in POSE_BODY_25_BODY_PARTS.items()}
 
 KEYPOINT_THRESHOLD = 0.01
-
-#OPENPOSE_MODEL_PATH = 'D:\Projects\Oh\\body_measure\openpose\models\\'
-OPENPOSE_MODEL_PATH = '/home/khanhhh/data_1/projects/Oh/codes/body_measure/openpose/models/'
 
 def find_pose(img):
     params = dict()
