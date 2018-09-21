@@ -11,7 +11,8 @@ set up environment
 
         3. follow this instruction to build OpenPose on  Linux 
             https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/installation.md
-            Note: I recommend not building OpenPose inside an Anaconda environemnt.
+            Note: 
+                I recommend not building OpenPose inside an Anaconda environemnt.
                 I tried to do it for a few days but no luck. 
                 Even I could build it successully, there're still run-time error due to library conflict.
                 OpenPose should be built using native Python on OS and other OS libraries.
