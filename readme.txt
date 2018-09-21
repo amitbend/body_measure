@@ -39,7 +39,7 @@ run the code
 
     4. extract body slices and measurement: this program uses silhouette and pose information to calculate body slices.
         For calculating measuremnt, height need to be passed in. 
-        Unfortunately, I have't supprot passing in height parameter yet.
+        Unfortunately, I have't supported passing in height parameter yet.
         
         run:  body_measure.py -i ../data/images -s ../data/silhouette -p ../data/pose -o ../data/measurement
 
