@@ -29,7 +29,7 @@ run the code
         conda activate body
 
     2. extract pose: this program uses OpenPose to calculate pose and output pose data
-       to the ouput data
+       to the ouput folder
         run: pose_extract.py -i ../data/images -o ../data/pose
 
     3. extract silhouette: this program first downloads Deeplab model and then extract silhouette.
