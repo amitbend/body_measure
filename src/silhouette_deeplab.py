@@ -2,12 +2,8 @@ import tensorflow as tf
 import cv2 as cv
 import urllib
 import os
-from pathlib import Path
 import tarfile
 from six.moves import urllib
-
-from matplotlib import gridspec
-from matplotlib import pyplot as plt
 import numpy as np
 from PIL import Image
 

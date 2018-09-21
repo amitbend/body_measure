@@ -1,4 +1,3 @@
-import sys
 import numpy as np
 import numpy.linalg as linalg
 import cv2 as cv
