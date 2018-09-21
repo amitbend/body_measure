@@ -28,7 +28,7 @@ run the code
         cd ./body_measure/src
         conda activate body
 
-    2. extract pose from an input folder: this program uses OpenPose to calculate pose and output pose data
+    2. extract pose: this program uses OpenPose to calculate pose and output pose data
        to the ouput data
         run: pose_extract.py -i ../data/images -o ../data/pose
 
