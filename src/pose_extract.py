@@ -58,8 +58,14 @@ if __name__ == '__main__':
     ap.add_argument("-i", "--input_dir", required=True, help="image folder")
     ap.add_argument("-o", "--output_dir", required=True, help='output pose dir')
     args = vars(ap.parse_args())
-    DIR_IN = args['input_dir']
-    DIR_OUT = args['output_dir']
+    DIR_IN = args['input_dir'] + '/'
+    DIR_OUT = args['output_dir'] + '/'
+
+    if not os.path.exists(DIR_OUT):
+        os.makedirs(DIR_OUT)
+
+    for f in Path(DIR_OUT).glob('*.*'):
+        os.remove(f)
 
     for img_path in Path(DIR_IN).glob('*.*'):
         print(img_path)

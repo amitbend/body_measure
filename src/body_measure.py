@@ -1,16 +1,14 @@
-import sys
 import cv2 as cv
 import os
-from sys import platform
 import numpy as np
 import numpy.linalg as linalg
 import matplotlib.pyplot as plt
 from pathlib import Path
 import util as ut
-from util import (is_valid_keypoint, is_valid_keypoint_1, pair_length, pair_dir, int_tuple)
-from pose_to_trimap import gen_fg_bg_masks, head_center_estimate
+from util import (is_valid_keypoint, is_valid_keypoint_1, pair_dir, int_tuple)
 from shapely.geometry import LineString, Point, MultiPoint
 from shapely.ops import nearest_points
+import argparse
 
 POSE_BODY_25_PAIRS_RENDER_GPU = (
     1, 8, 1, 2, 1, 5, 2, 3, 3, 4, 5, 6, 6, 7, 8, 9, 9, 10, 10, 11, 8, 12, 12, 13, 13, 14, 1, 0, 0, 15, 15, 17, 0, 16,
@@ -1045,8 +1043,11 @@ def resize_img_to_fit_silhouette(img, sil):
 
     return img, sil
 
+import sys
 def load_silhouette(path, img):
     sil = cv.imread(path, cv.IMREAD_GRAYSCALE)
+    if sil is None:
+        print(f'silhouette {path} is not found', file=sys.stderr)
     sil = cv.resize(sil, (img.shape[1], img.shape[0]), cv.INTER_NEAREST)
     ret, sil = cv.threshold(sil, 200, maxval=255, type=cv.THRESH_BINARY)
     return sil
@@ -1073,79 +1074,105 @@ def normalize_measurement_based_on_height(height, landmarks_f, landmarks_s):
 
     return measure_f, measure_s
 
-def calc_body_slices(img_f, img_s, sil_f, sil_s,  keypoints_f, keypoints_s):
-    # load and process front image
-    img_f = cv.imread(str(path_f))
-    keypoints_f, img_pose_f = find_pose(img_f)
-
-    sil_f = load_silhouette(f'{SILHOUETTE_DIR}{path_f.name}', img_f)
+def calc_body_slices(sil_f, sil_s,  keypoints_f, keypoints_s):
     contour_f = ut.find_largest_contour(sil_f, app_type=cv.CHAIN_APPROX_NONE)
     contour_f = ut.smooth_contour(contour_f, 10)
     contour_f = ut.resample_contour(contour_f, 720)
-    cv.drawContours(img_pose_f, [contour_f], -1, color=(255, 0, 0), thickness=1)
-    for i in range(contour_f.shape[0]):
-        cv.drawMarker(img_pose_f, int_tuple(contour_f[i, 0, :]), color=(0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
 
     # load and process side images
-    img_s = cv.imread(str(path_s))
-    sil_s = load_silhouette(f'{SILHOUETTE_DIR}{path_s.name}', img_s)
-    img_s, sil_s = resize_img_to_fit_silhouette(img_s, sil_s)
+    #img_s, sil_s = resize_img_to_fit_silhouette(img_s, sil_s)
     contour_s = ut.find_largest_contour(sil_s, app_type=cv.CHAIN_APPROX_NONE)
     contour_s = ut.smooth_contour(contour_s, 10)
     contour_s = ut.resample_contour(contour_s, 720)
 
-    keypoints_s, img_pose_s = find_pose(img_s)
-
-    cv.drawContours(img_pose_s, [contour_s], -1, color=(255, 0, 0), thickness=1)
-    # for i in range(contour_s.shape[0]):
-    #    cv.drawMarker(img_pose_s, int_tuple(contour_s[i,0,:]), color = (0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
-
-    G_debug_img_s = img_pose_s
-    G_debug_img_f = img_pose_f
-    #
-    landmarks_f, landmarks_s = estimate_landmark_slices(contour_f, keypoints_f[0, :, :], contour_s,
+    slices_f, slices_s = estimate_landmark_slices(contour_f, keypoints_f[0, :, :], contour_s,
                                                         keypoints_s[0, :, :])
 
-    height = heights[path_s.name]
-    measure_f, measure_s = normalize_measurement_based_on_height(height, landmarks_f, landmarks_s)
+    return contour_f, contour_s, slices_f, slices_s
 
-    for name, points in landmarks_f.items():
-        if 'Aux_' not in name:
-            cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
-    #
-    for name, points in landmarks_s.items():
-        if 'Aux_' not in name:
-            cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
-
-    for name, points in landmarks_f.items():
-        if 'Aux_' in name:
-            cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
-    #
-    for name, points in landmarks_s.items():
-        if 'Aux_' in name:
-            cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
-
-    cv.line(img_pose_f, int_tuple(landmarks_f['Height'][0]), int_tuple(landmarks_f['Height'][1]), (0, 255, 255),
-            thickness=LINE_THICKNESS + 2)
-    cv.line(img_pose_s, int_tuple(landmarks_s['Height'][0]), int_tuple(landmarks_s['Height'][1]), (0, 255, 255),
-            thickness=LINE_THICKNESS + 2)
-
-    plt.subplot(121), plt.imshow(img_pose_f[:, :, ::-1])
-    plt.subplot(122), plt.imshow(img_pose_s[:, :, ::-1])
-    plt.savefig(f'{OUT_MEASUREMENT_DIR}{path_f.name}', dpi=1000)
-
-
-if __name__ == '__main__':
-    IMG_DIR = '../data/images/'
-    SILHOUETTE_DIR = '../data/silhouette/'
-    POSE_DIR = '../data/pose/'
-    OUT_MEASUREMENT_DIR = '../data/measurement/'
-
+def calc_body_slices_util(path_f, path_s, POSE_DIR, SIL_DIR, OUT_DIR, debug_viz = True, height=None):
     MARKER_SIZE = 5
     MARKER_THICKNESS = 5
     LINE_THICKNESS = 2
 
-    for f in Path(OUT_MEASUREMENT_DIR).glob('*.*'):
+    img_f = cv.imread(str(path_f))
+    keypoints_f = np.load(f'{POSE_DIR}/{path_f.stem}.npy')
+    sil_f = load_silhouette(f'{SIL_DIR}{path_f.name}', img_f)
+
+    img_s = cv.imread(str(path_s))
+    sil_s = load_silhouette(f'{SIL_DIR}{path_s.name}', img_s)
+    keypoints_s = np.load(f'{POSE_DIR}/{path_s.stem}.npy')
+
+    contour_f, contour_s, slices_f, slices_s = calc_body_slices(sil_f, sil_s, keypoints_f, keypoints_s)
+
+    data = {'contour_f': contour_f, 'contour_s': contour_s}
+    np.save(f'{OUT_DIR}/{path_f.stem}_contour.npy', data)
+
+    data = {'slices_f': slices_f, 'slices_s': slices_s}
+    np.save(f'{OUT_DIR}/{path_f.stem}_slice.npy', data)
+
+    if height is not None:
+        measure_f, measure_s = normalize_measurement_based_on_height(height, slices_f, slices_s)
+        data = {'measure_f': measure_f, 'measure_s': measure_s}
+        np.save(f'{OUT_DIR}/{path_f.stem}_measure.npy', data)
+
+    if debug_viz == True:
+        img_pose_f = cv.imread(f'{POSE_DIR}/{path_f.stem}.png')
+        img_pose_s = cv.imread(f'{POSE_DIR}/{path_s.stem}.png')
+        if img_pose_f is not None:
+            cv.drawContours(img_pose_f, [contour_f], -1, color=(255, 0, 0), thickness=1)
+            for i in range(contour_f.shape[0]):
+                cv.drawMarker(img_pose_f, int_tuple(contour_f[i, 0, :]), color=(0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
+
+        if img_pose_s is not None:
+            cv.drawContours(img_pose_s, [contour_s], -1, color=(255, 0, 0), thickness=1)
+            for i in range(contour_s.shape[0]):
+                cv.drawMarker(img_pose_s, int_tuple(contour_s[i,0,:]), color = (0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
+
+        if img_pose_f is not None and img_pose_s is not None:
+            for name, points in slices_f.items():
+                if 'Aux_' not in name:
+                    cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
+            #
+            for name, points in slices_s.items():
+                if 'Aux_' not in name:
+                    cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
+
+            for name, points in slices_f.items():
+                if 'Aux_' in name:
+                    cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
+            #
+            for name, points in slices_s.items():
+                if 'Aux_' in name:
+                    cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
+
+            cv.line(img_pose_f, int_tuple(slices_f['Height'][0]), int_tuple(slices_f['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
+            cv.line(img_pose_s, int_tuple(slices_s['Height'][0]), int_tuple(slices_s['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
+
+            plt.clf()
+            plt.subplot(121), plt.imshow(img_pose_f[:, :, ::-1])
+            plt.subplot(122), plt.imshow(img_pose_s[:, :, ::-1])
+            plt.savefig(f'{OUT_DIR}{path_f.stem}_viz.png', dpi=1000)
+            #plt.show()
+
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-i", "--image_dir", required=True, help="image folder")
+    ap.add_argument("-s", "--sil_dir", required=True,   help="silhouette folder")
+    ap.add_argument("-p", "--pose_dir", required=True,  help="pose folder")
+    ap.add_argument("-o", "--output_dir", required=True, help='output silhouette dir')
+    args = vars(ap.parse_args())
+
+    IMG_DIR = args['image_dir'] + '/'
+    SIL_DIR = args['sil_dir'] + '/'
+    POSE_DIR = args['pose_dir'] + '/'
+    OUT_DIR = args['output_dir'] + '/'
+
+    if not os.path.exists(OUT_DIR):
+        os.makedirs(OUT_DIR)
+
+
+    for f in Path(OUT_DIR).glob('*.*'):
         os.remove(f)
 
     mapping = {}
@@ -1156,188 +1183,36 @@ if __name__ == '__main__':
     mapping_inv = {value:key for key, value in mapping.items()}
 
     heights = {}
-    heights['side_IMG_1935.JPG'] =  150
-    heights['side_IMG_1941.JPG'] = 160
-    heights['side_8E2593C4.jpg'] = 158
+    heights['IMG_1928__.JPG'] =  150
+    heights['IMG_1939__.JPG'] = 160
+    heights['8E2593C4__.jpg'] = 158
 
     #collect front and side image pairs
     all_img_paths = [path for path in Path(IMG_DIR).glob('*.*')]
-    path_pairs = []
-    for front_id, side_id in mapping_inv.items():
-        side_path = None
-        front_path = None
-        for path in all_img_paths:
-            if side_id in path.name:
-                side_path = path
-            if front_id in path.name:
-                front_path = path
-
-        if side_path is not None and front_path is not None:
-            path_pairs.append((front_path, side_path))
+    img_f_paths = {}
+    img_s_paths = {}
+    for path in Path(IMG_DIR).glob('*.*'):
+        if 'front_' in str(path):
+            id = str(path).replace('front_','')
+            img_f_paths[id] = path
+        elif 'side_' in str(path):
+            id = str(path).replace('side_','')
+            img_s_paths[id] = path
         else:
-            print(f'cannot find front and side image for this mapping: {side_id}-{front_id}')
+            print(f'{path} is not recognized as a front or side image')
+
+    path_pairs = []
+    for id, path_f in img_f_paths.items():
+        if id in img_s_paths:
+            path_pairs.append((path_f, img_s_paths[id]))
+
+    if len(path_pairs) == 0:
+        print('not front and side image pair is found. please change their names appropriately: expected format some_id_front_.jpg, some_id_side_.jpg')
 
     for path_f, path_s in path_pairs:
-
-        #load and process front image
-        img_f = cv.imread(str(path_f))
-        keypoints_f = np.load(f'{POSE_DIR}/{path_f.stem}.npy')
-        img_pose_f = cv.imread(f'{POSE_DIR}/{path_f.stem}.png')
-
-        sil_f = load_silhouette(f'{SILHOUETTE_DIR}{path_f.name}', img_f)
-        contour_f = ut.find_largest_contour(sil_f, app_type = cv.CHAIN_APPROX_NONE)
-        contour_f = ut.smooth_contour(contour_f, 10)
-        contour_f = ut.resample_contour(contour_f, 720)
-        cv.drawContours(img_pose_f, [contour_f], -1, color=(255, 0, 0), thickness=1)
-        for i in range(contour_f.shape[0]):
-            cv.drawMarker(img_pose_f, int_tuple(contour_f[i,0,:]), color = (0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
-
-        #load and process side images
-        img_s = cv.imread(str(path_s))
-        sil_s = load_silhouette(f'{SILHOUETTE_DIR}{path_s.name}', img_s)
-        #img_s, sil_s = resize_img_to_fit_silhouette(img_s, sil_s)
-        contour_s = ut.find_largest_contour(sil_s, app_type = cv.CHAIN_APPROX_NONE)
-        contour_s = ut.smooth_contour(contour_s, 10)
-        contour_s = ut.resample_contour(contour_s, 720)
-
-        keypoints_s = np.load(f'{POSE_DIR}/{path_s.stem}.npy')
-        img_pose_s = cv.imread(f'{POSE_DIR}/{path_s.stem}.png')
-
-        cv.drawContours(img_pose_s, [contour_s], -1, color=(255, 0, 0), thickness=1)
-        #for i in range(contour_s.shape[0]):
-        #    cv.drawMarker(img_pose_s, int_tuple(contour_s[i,0,:]), color = (0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
-
-        G_debug_img_s = img_pose_s
-        G_debug_img_f = img_pose_f
-
-        #
-        landmarks_f,  landmarks_s = estimate_landmark_slices(contour_f, keypoints_f[0, :, :], contour_s, keypoints_s[0, :, :])
-
-        height = heights[path_s.name]
-        measure_f, measure_s = normalize_measurement_based_on_height(height, landmarks_f, landmarks_s)
-
-        for name, points in landmarks_f.items():
-            if 'Aux_' not in name:
-                cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
-        #
-        for name, points in landmarks_s.items():
-            if 'Aux_' not in name:
-                cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
-
-        for name, points in landmarks_f.items():
-            if 'Aux_' in name:
-                cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
-        #
-        for name, points in landmarks_s.items():
-            if 'Aux_' in name:
-                cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
-
-        cv.line(img_pose_f, int_tuple(landmarks_f['Height'][0]), int_tuple(landmarks_f['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS+2)
-        cv.line(img_pose_s, int_tuple(landmarks_s['Height'][0]), int_tuple(landmarks_s['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS+2)
-
-        plt.subplot(121), plt.imshow(img_pose_f[:,:,::-1])
-        plt.subplot(122), plt.imshow(img_pose_s[:,:,::-1])
-        plt.savefig(f'{OUT_MEASUREMENT_DIR}{path_f.name}', dpi=1000)
-        #plt.show()
-
-def back_up_code():
-    ROOT_DIR = '/home/khanhhh/data_1/projects/Oh/data/oh_mobile_images/'
-    IMG_DIR = f'{ROOT_DIR}images/'
-    SILHOUETTE_DIR = f'{ROOT_DIR}silhouette_refined/'
-    OUT_MEASUREMENT_DIR = f'{ROOT_DIR}measurements/'
-
-    MARKER_SIZE = 5
-    MARKER_THICKNESS = 5
-    LINE_THICKNESS = 2
-
-    for f in Path(OUT_MEASUREMENT_DIR).glob('*.*'):
-        os.remove(f)
-
-    mapping = {}
-    mapping['side_IMG_1935.JPG'] = 'front_IMG_1928.JPG'
-    mapping['side_IMG_1941.JPG'] = 'front_IMG_1939.JPG'
-    mapping['side_8E2593C4-35E4-4B49-9B89-545AC906235C.jpg'] = 'front_9EF020C7-2CC9-4171-8378-60132015289D.jpg'
-
-    mapping_inv = {value:key for key, value in mapping.items()}
-
-    heights = {}
-    heights['side_IMG_1935.JPG'] =  150
-    heights['side_IMG_1941.JPG'] = 160
-    heights['side_8E2593C4-35E4-4B49-9B89-545AC906235C.jpg'] = 158
-
-    #collect front and side image pairs
-    all_img_paths = [path for path in Path(IMG_DIR).glob('*.*')]
-    path_pairs = []
-    for front_id, side_id in mapping_inv.items():
-        side_path = None
-        front_path = None
-        for path in all_img_paths:
-            if side_id in path.name:
-                side_path = path
-            if front_id in path.name:
-                front_path = path
-
-        if side_path is not None and front_path is not None:
-            path_pairs.append((front_path, side_path))
+        if path_f.name in heights:
+            height = heights[path_f.name]
         else:
-            print(f'cannot find front and side image for this mapping: {side_id}-{front_id}')
-
-    for path_f, path_s in path_pairs:
-        #load and process front image
-        img_f = cv.imread(str(path_f))
-        keypoints_f, img_pose_f = find_pose(img_f)
-
-        sil_f = load_silhouette(f'{SILHOUETTE_DIR}{path_f.name}', img_f)
-        contour_f = ut.find_largest_contour(sil_f, app_type = cv.CHAIN_APPROX_NONE)
-        contour_f = ut.smooth_contour(contour_f, 10)
-        contour_f = ut.resample_contour(contour_f, 720)
-        cv.drawContours(img_pose_f, [contour_f], -1, color=(255, 0, 0), thickness=1)
-        for i in range(contour_f.shape[0]):
-            cv.drawMarker(img_pose_f, int_tuple(contour_f[i,0,:]), color = (0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
-
-        #load and process side images
-        img_s = cv.imread(str(path_s))
-        sil_s = load_silhouette(f'{SILHOUETTE_DIR}{path_s.name}', img_s)
-        img_s, sil_s = resize_img_to_fit_silhouette(img_s, sil_s)
-        contour_s = ut.find_largest_contour(sil_s, app_type = cv.CHAIN_APPROX_NONE)
-        contour_s = ut.smooth_contour(contour_s, 10)
-        contour_s = ut.resample_contour(contour_s, 720)
-
-        keypoints_s, img_pose_s = find_pose(img_s)
-
-        cv.drawContours(img_pose_s, [contour_s], -1, color=(255, 0, 0), thickness=1)
-        #for i in range(contour_s.shape[0]):
-        #    cv.drawMarker(img_pose_s, int_tuple(contour_s[i,0,:]), color = (0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
-
-        G_debug_img_s = img_pose_s
-        G_debug_img_f = img_pose_f
-        #
-        landmarks_f,  landmarks_s = estimate_landmark_slices(contour_f, keypoints_f[0, :, :], contour_s, keypoints_s[0, :, :])
-
-        height = heights[path_s.name]
-        measure_f, measure_s = normalize_measurement_based_on_height(height, landmarks_f, landmarks_s)
-
-        for name, points in landmarks_f.items():
-            if 'Aux_' not in name:
-                cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
-        #
-        for name, points in landmarks_s.items():
-            if 'Aux_' not in name:
-                cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
-
-        for name, points in landmarks_f.items():
-            if 'Aux_' in name:
-                cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
-        #
-        for name, points in landmarks_s.items():
-            if 'Aux_' in name:
-                cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
-
-        cv.line(img_pose_f, int_tuple(landmarks_f['Height'][0]), int_tuple(landmarks_f['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS+2)
-        cv.line(img_pose_s, int_tuple(landmarks_s['Height'][0]), int_tuple(landmarks_s['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS+2)
-
-        plt.subplot(121), plt.imshow(img_pose_f[:,:,::-1])
-        plt.subplot(122), plt.imshow(img_pose_s[:,:,::-1])
-        plt.savefig(f'{OUT_MEASUREMENT_DIR}{path_f.name}', dpi=1000)
-
+            height = None
+        calc_body_slices_util(path_f, path_s, POSE_DIR, SIL_DIR, OUT_DIR, debug_viz=True, height = height)
 

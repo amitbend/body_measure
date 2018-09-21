@@ -312,18 +312,17 @@ def extract_silhouette(img_path, keypoints):
     return  sil_final
 
 if __name__ == '__main__':
-    IMG_DIR = '../data/images/'
-    OUT_SILHOUETTE_DIR = '../data/silhouette/'
-    POSE_DIR = '../data/pose/'
-
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--image_dir", required=True, help="image folder")
     ap.add_argument("-p", "--pose_dir", required=True,  help="pose folder")
     ap.add_argument("-o", "--output_dir", required=True, help='output silhouette dir')
     args = vars(ap.parse_args())
-    IMG_DIR = args['image_dir']
-    POSE_DIR = args['pose_dir']
-    OUT_SILHOUETTE_DIR = args['output_dir']
+    IMG_DIR = args['image_dir'] + '/'
+    POSE_DIR = args['pose_dir'] + '/'
+    OUT_SILHOUETTE_DIR = args['output_dir'] + '/'
+
+    if not os.path.exists(OUT_SILHOUETTE_DIR):
+        os.makedirs(OUT_SILHOUETTE_DIR)
 
     for f in Path(OUT_SILHOUETTE_DIR).glob('*.*'):
         os.remove(f)
@@ -332,23 +331,22 @@ if __name__ == '__main__':
         print(img_path)
         pose_path = f'{POSE_DIR}{img_path.stem}.npy'
         if not os.path.isfile(pose_path):
-            print('\tmissing keypoint file', file=sys.stderr)
+            print('\t missing keypoint file', file=sys.stderr)
             continue
 
         keypoints = np.load(pose_path)
         silhouette = extract_silhouette(img_path, keypoints)
         cv.imwrite(f'{OUT_SILHOUETTE_DIR}/{img_path.name}', silhouette)
-
         continue
 
-        # visualization
-        img_1 = img_org.copy()
-        cv.drawContours(img_1, [contour], -1, (255, 0, 0), thickness=3)
-        cv.drawContours(img_1, [contour_refined], -1, (0, 0, 255), thickness=3)
-
-        plt.subplot(121), plt.imshow(img[:, :, ::-1])
-        plt.subplot(122), plt.imshow(img_1[:, :, ::-1])
-        #plt.show()
-        plt.savefig(f'{OUT_MEASUREMENT_DIR}/{img_path.name}', dpi=1000)
+        # # visualization
+        # img_1 = img_org.copy()
+        # cv.drawContours(img_1, [contour], -1, (255, 0, 0), thickness=3)
+        # cv.drawContours(img_1, [contour_refined], -1, (0, 0, 255), thickness=3)
+        #
+        # plt.subplot(121), plt.imshow(img[:, :, ::-1])
+        # plt.subplot(122), plt.imshow(img_1[:, :, ::-1])
+        # #plt.show()
+        # plt.savefig(f'{OUT_MEASUREMENT_DIR}/{img_path.name}', dpi=1000)
 
 
