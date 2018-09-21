@@ -24,6 +24,7 @@ set up environment
 
 run the code
     1. activate conda environment
+        cd ./body_measure/src
         conda activate body
 
     2. extract pose from an input folder: this program uses OpenPose to calculate pose and output pose data
