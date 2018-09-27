@@ -13,7 +13,7 @@
       * Note: 
       I recommend NOT building OpenPose INSIDE an Anaconda environemnt.
       I tried to do it for a few days but no luck. 
-      Even I could build it successully, there're still run-time error due to library conflict.
+      Even I was able to build it, there're still run-time error due to library conflict.
       OpenPose should be built using native Python on OS and other OS libraries.
 
   * create anaconda environment
