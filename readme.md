@@ -1,15 +1,15 @@
-set up environment
+1. set up environment
 
-    1. clone the code
+    1.1. clone the code
         git clone https://github.com/khanhha/body_measure.git
 
-    2. build OpenPose
-        1. cd to the folder body_measure
+    1.2. build OpenPose
+        1.2.1. cd to the folder body_measure
 
-        2. clone OpenPose to the same folder
+        1.2.2. clone OpenPose to the same folder
             git clone https://github.com/CMU-Perceptual-Computing-Lab/openpose
 
-        3. follow this instruction to build OpenPose on  Linux 
+        1.2.3. follow this instruction to build OpenPose on  Linux 
             https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/installation.md
             Note: 
                 I recommend NOT building OpenPose INSIDE an Anaconda environemnt.
@@ -17,7 +17,7 @@ set up environment
                 Even I could build it successully, there're still run-time error due to library conflict.
                 OpenPose should be built using native Python on OS and other OS libraries.
 
-    3. create anaconda environment
+    1.3. create anaconda environment
         conda create -n body python=3.5
         conda activate body
         conda install -c conda-forge opencv
