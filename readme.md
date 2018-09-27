@@ -36,8 +36,7 @@
 
     see the file ../data/slice_result_annotations.png
 
-# run the code step by step for the purpose of debugging
-
+# run the code step by step
 ![alt text](./diagram.png "overview")
 
 * activate conda environment
