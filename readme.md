@@ -66,7 +66,7 @@
 
 # visualize and interpret data
 
-this code draws calculated slices from the previsous step on front and side images.
+this code draws slices calculated from the previsous steps on front and side images.
 and print out width and depth of 2d slices in centimet.
 
 please check this code for information about the output data format
