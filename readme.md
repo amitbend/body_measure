@@ -38,6 +38,8 @@
 
 # run the code step by step for the purpose of debugging
 
+![alt text](./diagram.png "overview")
+
 * activate conda environment
 
       cd ./body_measure/src
