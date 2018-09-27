@@ -60,7 +60,7 @@
 
 4. run all in one on a single image
 
-    body_measure_util.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -h_cm 165 -o                 ../data/measurement/
+    run: body_measure_util.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -h_cm 165 -o                 ../data/measurement/
 
     check the folder ../data/measurement for visualization
 
