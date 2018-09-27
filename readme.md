@@ -1,6 +1,5 @@
 
-![alt text][logo]
-[logo] ../data/slice_result_annotations.png
+![alt text](../data/slice_result_annotations.png "result")
 
 # set up environment
 
