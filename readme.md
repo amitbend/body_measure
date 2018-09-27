@@ -48,10 +48,12 @@
 
     - check the fodler ../data/silhouette for visualization
 
-* extract body slices and measurement: this program uses silhouette and pose information to calculate body slices.
-    - run:  body_measure.py -i ../data/images -s ../data/silhouette -po ../data/pose -pa ../data/front_side_pair.txt 
+* extract body slices and measurement: 
+	* this program uses the refined silhouette and pose information to calculate body slices. For example, the shoulder landmarks are estimated from the shoulder joints in the front image, or the bust landmarks are estimated based on the contour curvature in the side image.
+	  
+    * run:  body_measure.py -i ../data/images -s ../data/silhouette -po ../data/pose -pa ../data/front_side_pair.txt 
       -o ../data/measurement
-    - check the folder ../data/measurement for visualization
+    * check the folder ../data/measurement for visualization
 
 
 # run all in one on a single image
