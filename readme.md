@@ -28,7 +28,9 @@
     see the file ../data/slice_result_annotations.png
 
 3. run the code
-    3.1. run step by step for the purpose of debugging
+
+        3.1. run step by step for the purpose of debugging
+
         3.1. activate conda environment
             cd ./body_measure/src
             conda activate body
