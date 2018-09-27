@@ -23,42 +23,42 @@
         conda install -c conda-forge opencv
         conda install tensorflow-gpu shapely matplotlib pillow
 
-a glimpse over the expected output
+2. a glimpse over the expected output
     see the file ../data/slice_result_annotations.png
 
-run the code
-    1. run step by step for the purpose of debugging
-        1. activate conda environment
+3. run the code
+    3.1. run step by step for the purpose of debugging
+        3.1. activate conda environment
             cd ./body_measure/src
             conda activate body
 
-        2. extract pose: this program uses OpenPose to calculate pose and output pose data
+        3.2. extract pose: this program uses OpenPose to calculate pose and output pose data
            to the ouput folder. this module just require openpose and opencv
 
             run: pose_extract.py -i ../data/images -o ../data/pose
 
             check the folder ../data/pose for visualization
 
-        3. extract silhouette: this program first downloads Deeplab model and then extract silhouette.
+        3.3. extract silhouette: this program first downloads Deeplab model and then extract silhouette.
             The deeplab silhouete is then refined using local grab-cut and pose information
 
             run: silhouette.py -i ../data/images/ -p ../data/pose/ -o ../data/silhouette/
 
             check the fodler ../data/silhouette for visualization
 
-        4. extract body slices and measurement: this program uses silhouette and pose information to calculate body slices.
+        3.4. extract body slices and measurement: this program uses silhouette and pose information to calculate body slices.
 
             run:  body_measure.py -i ../data/images -s ../data/silhouette -po ../data/pose -pa ../data/front_side_pair.txt -o                   ../data/measurement
 
             check the folder ../data/measurement for visualization
 
 
-    2. run all in one on a single image
+    3.2. run all in one on a single image
         body_measure_util.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -h_cm 165 -o                 ../data/measurement/
 
         check the folder ../data/measurement for visualization
 
-    3. visualize and interpret data
+    3.3. visualize and interpret data
         this code draws calculated slices from the previsous step on front and side images.
         and print out width and depth of 2d slices in centimet.
         
@@ -69,7 +69,3 @@ run the code
 
         viz_measurement_result.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -d             
         ../data/measurement/IMG_1928_front_.npy
-
-
-
-
