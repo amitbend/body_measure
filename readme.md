@@ -1,5 +1,6 @@
+
 ![alt text][logo]
-[logo]: https://github.com/adam-p/markdown-here/raw/master/src/common/images/icon48.png "Logo Title Text 2"
+[logo] ../data/slice_result_annotations.png
 
 # set up environment
 
