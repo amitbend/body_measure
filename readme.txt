@@ -12,7 +12,7 @@ set up environment
         3. follow this instruction to build OpenPose on  Linux 
             https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/installation.md
             Note: 
-                I recommend not building OpenPose inside an Anaconda environemnt.
+                I recommend NOT building OpenPose INSIDE an Anaconda environemnt.
                 I tried to do it for a few days but no luck. 
                 Even I could build it successully, there're still run-time error due to library conflict.
                 OpenPose should be built using native Python on OS and other OS libraries.
@@ -23,26 +23,47 @@ set up environment
         conda install -c conda-forge opencv
         conda install tensorflow-gpu shapely matplotlib pillow
 
+a glimpse over the expected output
+    see the file ../data/slice_result_annotations.png
+
 run the code
-    1. activate conda environment
-        cd ./body_measure/src
-        conda activate body
+    1. run step by step for the purpose of debugging
+        1. activate conda environment
+            cd ./body_measure/src
+            conda activate body
 
-    2. extract pose: this program uses OpenPose to calculate pose and output pose data
-       to the ouput folder
-        run: pose_extract.py -i ../data/images -o ../data/pose
+        2. extract pose: this program uses OpenPose to calculate pose and output pose data
+           to the ouput folder. this module just require openpose and opencv
 
-    3. extract silhouette: this program first downloads Deeplab model and then extract silhouette.
-        The deeplab silhouete is then refined using local grab-cut and pose information
-        
-        run: silhouette.py -i ../data/images/ -p ../data/pose/ -o ../data/silhouette/
+            run: pose_extract.py -i ../data/images -o ../data/pose
 
-    4. extract body slices and measurement: this program uses silhouette and pose information to calculate body slices.
-        For calculating measuremnt, height need to be passed in. 
-        Unfortunately, I have't supported passing in height parameter yet.
-        
-        run:  body_measure.py -i ../data/images -s ../data/silhouette -p ../data/pose -o ../data/measurement
+            check the folder ../data/pose for visualization
 
+        3. extract silhouette: this program first downloads Deeplab model and then extract silhouette.
+            The deeplab silhouete is then refined using local grab-cut and pose information
+
+            run: silhouette.py -i ../data/images/ -p ../data/pose/ -o ../data/silhouette/
+
+            check the fodler ../data/silhouette for visualization
+
+        4. extract body slices and measurement: this program uses silhouette and pose information to calculate body slices.
+
+            run:  body_measure.py -i ../data/images -s ../data/silhouette -po ../data/pose -pa ../data/front_side_pair.txt -o ../data/measurement
+
+            check the folder ../data/measurement for visualization
+
+
+    2. run all in one on a single image
+        body_measure_util.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -h_cm 165 -o ../data/measurement/
+
+        check the folder ../data/measurement for visualization
+
+    3. visualize and interpret data
+        this code draws calculated slices from the previsous step on front and side images.
+        it also print out width and depth of 2d slices in centimet
+        for some measuremetn like neck, collar, wrist, etc, we can only extract their width from front image. their depth values are not available and printed out as -1
+
+        viz_measurement_result.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -d ../data/measurement/IMG_1928_front_.npy
 
 
 

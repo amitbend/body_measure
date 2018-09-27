@@ -1145,74 +1145,48 @@ def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, 
 
     return data, final_vis
 
+def load_pair_info(pair_text_file_path):
+    pairs = []
+    with open(pair_text_file_path) as f:
+        for line in f.readlines():
+            img_name_f, img_name_s, height = line.split()
+            height = float(height)
+            pairs.append((img_name_f, img_name_s, height))
+    return pairs
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--image_dir", required=True, help="image folder")
     ap.add_argument("-s", "--sil_dir", required=True,   help="silhouette folder")
-    ap.add_argument("-p", "--pose_dir", required=True,  help="pose folder")
+    ap.add_argument("-po", "--pose_dir", required=True,  help="pose folder")
+    ap.add_argument("-pa", "--pair_file", required=True,  help="text file that contrains front image pair and height value")
     ap.add_argument("-o", "--output_dir", required=True, help='output silhouette dir')
     args = vars(ap.parse_args())
 
     IMG_DIR = args['image_dir'] + '/'
     SIL_DIR = args['sil_dir'] + '/'
     POSE_DIR = args['pose_dir'] + '/'
+    pair_path = args['pair_file']
     OUT_DIR = args['output_dir'] + '/'
 
     if not os.path.exists(OUT_DIR):
         os.makedirs(OUT_DIR)
 
-
     for f in Path(OUT_DIR).glob('*.*'):
         os.remove(f)
 
-    mapping = {}
-    mapping['side_IMG_1935.JPG'] = 'front_IMG_1928.JPG'
-    mapping['side_IMG_1941.JPG'] = 'front_IMG_1939.JPG'
-    mapping['side_8E2593C4.jpg'] = 'front_9EF020C7.jpg'
-
-    mapping_inv = {value:key for key, value in mapping.items()}
-
-    heights = {}
-    heights['IMG_1928__.JPG'] =  150
-    heights['IMG_1939__.JPG'] = 160
-    heights['8E2593C4__.jpg'] = 158
-
-    #collect front and side image pairs
-    all_img_paths = [path for path in Path(IMG_DIR).glob('*.*')]
-    img_f_paths = {}
-    img_s_paths = {}
-    for path in Path(IMG_DIR).glob('*.*'):
-        if 'front_' in str(path):
-            id = str(path).replace('front_','')
-            img_f_paths[id] = path
-        elif 'side_' in str(path):
-            id = str(path).replace('side_','')
-            img_s_paths[id] = path
-        else:
-            print(f'{path} is not recognized as a front or side image')
-
-    path_pairs = []
-    for id, path_f in img_f_paths.items():
-        if id in img_s_paths:
-            path_pairs.append((path_f, img_s_paths[id]))
-
-    if len(path_pairs) == 0:
-        print('not front and side image pair is found. please change their names appropriately: expected format some_id_front_.jpg, some_id_side_.jpg')
-
-    for path_f, path_s in path_pairs:
-        if path_f.name in heights:
-            height = heights[path_f.name]
-        else:
-            height = 170
+    pairs = load_pair_info(pair_text_file_path=pair_path)
+    for img_name_f, img_name_s, height in pairs:
+        path_f = Path(f'{IMG_DIR}{img_name_f}')
+        path_s = Path(f'{IMG_DIR}{img_name_s}')
 
         img_f = cv.imread(str(path_f))
         keypoints_f = np.load(f'{POSE_DIR}/{path_f.stem}.npy')
         sil_f = load_silhouette(f'{SIL_DIR}{path_f.name}', img_f)
 
         img_s = cv.imread(str(path_s))
-        sil_s = load_silhouette(f'{SIL_DIR}{path_s.name}', img_s)
         keypoints_s = np.load(f'{POSE_DIR}/{path_s.stem}.npy')
+        sil_s = load_silhouette(f'{SIL_DIR}{path_s.name}', img_s)
 
         # plt.subplot(121)
         # plt.imshow(img_f)
