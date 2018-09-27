@@ -43,12 +43,12 @@
       cd ./body_measure/src
       conda activate body
 
-* extract pose: this program uses OpenPose to calculate pose and output pose data to the ouput folder. this module just require openpose and opencv
+* extract pose: this program uses OpenPose to calculate pose, which consists of joint positions and output data to the ouput folder. This module just requires openpose and opencv
 
       run: pose_extract.py -i ../data/images -o ../data/pose
       check the folder ../data/pose for visualization
 
-* extract silhouette: this program first downloads Deeplab model and then extract silhouette.The deeplab silhouete is then refined using local grab-cut and pose information
+* extract silhouette: This program first downloads a Deeplab model, loads it to tensorflow to extract silhouette. Unfortunately, the deeplab silhouete often doesn't fit to the real human contour. Therefre, we refine deeplab contour by applying grab-on on boudning box of human body parts. The sure foreground mask for grab-cut operations is calcualted by dilating skeleton adaptively, and the sure background mask is calculated by dilating the deepsilhouette with window size of 15
 
       run: silhouette.py -i ../data/images/ -p ../data/pose/ -o ../data/silhouette/
       check the fodler ../data/silhouette for visualization
