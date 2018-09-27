@@ -19,12 +19,14 @@
                 OpenPose should be built using native Python on OS and other OS libraries.
 
     1.3. create anaconda environment
+    
         conda create -n body python=3.5
         conda activate body
         conda install -c conda-forge opencv
         conda install tensorflow-gpu shapely matplotlib pillow
 
 2. a glimpse over the expected output
+
     see the file ../data/slice_result_annotations.png
 
 3. run the code
