@@ -955,11 +955,11 @@ def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
     ##############################################
     # arm
     # left elbow
-    points = estimate_front_elbow(contour_f, keypoints_f, left=True)
+    points = estimate_front_elbow(contour_f, keypoints_f, left=False)
     landmarks_f['LElbow'] = points
 
     #wrist
-    points = estimate_front_wrist(contour_f, keypoints_f, left=True)
+    points = estimate_front_wrist(contour_f, keypoints_f, left=False)
     landmarks_f['LWrist'] = points
 
     ##########################################################
@@ -1085,75 +1085,73 @@ def calc_body_slices(sil_f, sil_s,  keypoints_f, keypoints_s):
     contour_s = ut.smooth_contour(contour_s, 10)
     contour_s = ut.resample_contour(contour_s, 720)
 
-    slices_f, slices_s = estimate_landmark_slices(contour_f, keypoints_f[0, :, :], contour_s,
-                                                        keypoints_s[0, :, :])
+    slices_f, slices_s = estimate_landmark_slices(contour_f, keypoints_f[0, :, :], contour_s, keypoints_s[0, :, :])
 
     return contour_f, contour_s, slices_f, slices_s
 
-def calc_body_slices_util(path_f, path_s, POSE_DIR, SIL_DIR, OUT_DIR, debug_viz = True, height=None):
-    MARKER_SIZE = 5
-    MARKER_THICKNESS = 5
+def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height):
+    #MARKER_SIZE = 5
+    #MARKER_THICKNESS = 5
     LINE_THICKNESS = 2
-
-    img_f = cv.imread(str(path_f))
-    keypoints_f = np.load(f'{POSE_DIR}/{path_f.stem}.npy')
-    sil_f = load_silhouette(f'{SIL_DIR}{path_f.name}', img_f)
-
-    img_s = cv.imread(str(path_s))
-    sil_s = load_silhouette(f'{SIL_DIR}{path_s.name}', img_s)
-    keypoints_s = np.load(f'{POSE_DIR}/{path_s.stem}.npy')
 
     contour_f, contour_s, slices_f, slices_s = calc_body_slices(sil_f, sil_s, keypoints_f, keypoints_s)
 
-    data = {'contour_f': contour_f, 'contour_s': contour_s}
-    np.save(f'{OUT_DIR}/{path_f.stem}_contour.npy', data)
+    #data = {'contour_f': contour_f, 'contour_s': contour_s}
+    #np.save(f'{OUT_DIR}/{path_f.stem}_contour.npy', data)
 
-    data = {'slices_f': slices_f, 'slices_s': slices_s}
-    np.save(f'{OUT_DIR}/{path_f.stem}_slice.npy', data)
+    #data = {'slices_f': slices_f, 'slices_s': slices_s}
+    #np.save(f'{OUT_DIR}/{path_f.stem}_slice.npy', data)
 
-    if height is not None:
-        measure_f, measure_s = normalize_measurement_based_on_height(height, slices_f, slices_s)
-        data = {'measure_f': measure_f, 'measure_s': measure_s}
-        np.save(f'{OUT_DIR}/{path_f.stem}_measure.npy', data)
+    measure_f, measure_s = normalize_measurement_based_on_height(height, slices_f, slices_s)
+    #data = {'measure_f': measure_f, 'measure_s': measure_s}
+    #np.save(f'{OUT_DIR}/{path_f.stem}_measure.npy', data)
 
-    if debug_viz == True:
-        img_pose_f = cv.imread(f'{POSE_DIR}/{path_f.stem}.png')
-        img_pose_s = cv.imread(f'{POSE_DIR}/{path_s.stem}.png')
-        if img_pose_f is not None:
-            cv.drawContours(img_pose_f, [contour_f], -1, color=(255, 0, 0), thickness=1)
-            for i in range(contour_f.shape[0]):
-                cv.drawMarker(img_pose_f, int_tuple(contour_f[i, 0, :]), color=(0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
+    data = {'contour_f': contour_f, 'contour_s': contour_s,
+            'slices_f': slices_f, 'slices_s': slices_s,
+            'measure_f': measure_f, 'measure_s': measure_s}
 
-        if img_pose_s is not None:
-            cv.drawContours(img_pose_s, [contour_s], -1, color=(255, 0, 0), thickness=1)
-            for i in range(contour_s.shape[0]):
-                cv.drawMarker(img_pose_s, int_tuple(contour_s[i,0,:]), color = (0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
+    #img_pose_f = cv.imread(f'{POSE_DIR}/{path_f.stem}.png')
+    #img_pose_s = cv.imread(f'{POSE_DIR}/{path_s.stem}.png')
+    img_pose_f = img_f.copy()
+    img_pose_s = img_s.copy()
 
-        if img_pose_f is not None and img_pose_s is not None:
-            for name, points in slices_f.items():
-                if 'Aux_' not in name:
-                    cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
-            #
-            for name, points in slices_s.items():
-                if 'Aux_' not in name:
-                    cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
+    cv.drawContours(img_pose_f, [contour_f], -1, color=(255, 0, 0), thickness=1)
+    for i in range(contour_f.shape[0]):
+        cv.drawMarker(img_pose_f, int_tuple(contour_f[i, 0, :]), color=(0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
 
-            for name, points in slices_f.items():
-                if 'Aux_' in name:
-                    cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
-            #
-            for name, points in slices_s.items():
-                if 'Aux_' in name:
-                    cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
+    cv.drawContours(img_pose_s, [contour_s], -1, color=(255, 0, 0), thickness=1)
+    for i in range(contour_s.shape[0]):
+        cv.drawMarker(img_pose_s, int_tuple(contour_s[i,0,:]), color = (0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
 
-            cv.line(img_pose_f, int_tuple(slices_f['Height'][0]), int_tuple(slices_f['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
-            cv.line(img_pose_s, int_tuple(slices_s['Height'][0]), int_tuple(slices_s['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
+    for name, points in slices_f.items():
+        if 'Aux_' not in name:
+            cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
+    #
+    for name, points in slices_s.items():
+        if 'Aux_' not in name:
+            cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
 
-            plt.clf()
-            plt.subplot(121), plt.imshow(img_pose_f[:, :, ::-1])
-            plt.subplot(122), plt.imshow(img_pose_s[:, :, ::-1])
-            plt.savefig(f'{OUT_DIR}{path_f.stem}_viz.png', dpi=1000)
-            #plt.show()
+    for name, points in slices_f.items():
+        if 'Aux_' in name:
+            cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
+    #
+    for name, points in slices_s.items():
+        if 'Aux_' in name:
+            cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
+
+    cv.line(img_pose_f, int_tuple(slices_f['Height'][0]), int_tuple(slices_f['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
+    cv.line(img_pose_s, int_tuple(slices_s['Height'][0]), int_tuple(slices_s['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
+
+    # plt.clf()
+    # plt.subplot(121), plt.imshow(img_pose_f[:, :, ::-1])
+    # plt.subplot(122), plt.imshow(img_pose_s[:, :, ::-1])
+    # plt.savefig(f'{OUT_DIR}{path_f.stem}_viz.png', dpi=1000)
+    # plt.show()
+
+    final_vis = np.concatenate((img_pose_f, img_pose_s), axis=1)
+
+    return data, final_vis
+
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
@@ -1214,5 +1212,24 @@ if __name__ == '__main__':
             height = heights[path_f.name]
         else:
             height = None
-        calc_body_slices_util(path_f, path_s, POSE_DIR, SIL_DIR, OUT_DIR, debug_viz=True, height = height)
+
+        img_f = cv.imread(str(path_f))
+        keypoints_f = np.load(f'{POSE_DIR}/{path_f.stem}.npy')
+        sil_f = load_silhouette(f'{SIL_DIR}{path_f.name}', img_f)
+
+        img_s = cv.imread(str(path_s))
+        sil_s = load_silhouette(f'{SIL_DIR}{path_s.name}', img_s)
+        keypoints_s = np.load(f'{POSE_DIR}/{path_s.stem}.npy')
+        plt.subplot(121)
+        plt.imshow(img_f)
+        plt.imshow(sil_f, alpha=0.4)
+        plt.subplot(122)
+        plt.imshow(img_s)
+        plt.imshow(sil_s, alpha=0.4)
+        plt.show()
+
+        data, final_viz = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height = height)
+        cv.imwrite(f'{OUT_DIR}/{path_f.name}', final_viz)
+
+        np.save(f'{OUT_DIR}/{path_f.stem}.npy', data)
 

@@ -48,10 +48,10 @@ class DeepLabModel(object):
       resized_image: RGB image resized from original input image.
       seg_map: Segmentation map of `resized_image`.
     """
-    width, height = image.size
+    height, width = image.shape[:2]
     resize_ratio = 1.0 * self.INPUT_SIZE / max(width, height)
     target_size = (int(resize_ratio * width), int(resize_ratio * height))
-    resized_image = image.convert('RGB').resize(target_size, Image.ANTIALIAS)
+    resized_image = cv.resize(image, target_size, interpolation=cv.INTER_AREA)
     batch_seg_map = self.sess.run(
         self.OUTPUT_TENSOR_NAME,
         feed_dict={self.INPUT_TENSOR_NAME: [np.asarray(resized_image)]})
@@ -108,12 +108,11 @@ def load_model_file():
     G_MODEL = DeepLabModel(download_path)
     print('model loaded successfully!')
 
-def dl_extract_silhouette(img_path):
+def dl_extract_silhouette(img):
     global G_MODEL
     if G_MODEL is None:
         load_model_file()
 
-    img = Image.open(str(img_path))
     resized_im, seg_map = G_MODEL.run(img)
     silhouette_mask = (seg_map == 15)
     silhouette = silhouette_mask.astype(np.uint8) * 255
@@ -130,6 +129,6 @@ def dl_extract_silhouette(img_path):
     silhouette_1 = np.zeros(output.shape, np.uint8)
     silhouette_1[output == max_label] = 255
     silhouette_1 = cv.morphologyEx(silhouette_1, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (5, 5)))
-    silhouette_1 = cv.resize(silhouette_1, img.size, cv.INTER_NEAREST)
+    silhouette_1 = cv.resize(silhouette_1, img.shape[:2][::-1], cv.INTER_NEAREST)
 
     return silhouette_1

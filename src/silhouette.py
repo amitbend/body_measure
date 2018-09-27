@@ -278,21 +278,10 @@ def fix_silhouette(sil):
     sil = cv.morphologyEx(sil, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, ksize=(3,3)))
     return sil
 
-def extract_silhouette(img_path, keypoints):
-    if 'side_' in str(img_path):
-        is_front_img = False
-    elif 'front_' in str(img_path):
-        is_front_img = True
-    else:
-        print('not a front or side image. please attach annation: front_ or side_ to front of the image name', file=sys.stderr)
+def extract_silhouette(img, is_front_img, keypoints):
+    sil = dl_extract_silhouette(img)
 
-    img = cv.imread(str(img_path))
-    img_org = img.copy()
-    #img_pose = cv.imread(f'{POSE_DIR}{img_path.stem}.png')
-
-    sil = dl_extract_silhouette(str(img_path))
-
-    bg_mask = cv.morphologyEx(sil, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (10, 10)))
+    bg_mask = cv.morphologyEx(sil, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (15, 15)))
 
     sure_fg_mask, _ = gen_fg_bg_masks(img, keypoints, front_view=True)
     sure_fg_mask = (sure_fg_mask == 255)
@@ -300,16 +289,18 @@ def extract_silhouette(img_path, keypoints):
 
     contour = find_largest_contour(sil, cv.CHAIN_APPROX_TC89_L1)
 
-    sil = cv.morphologyEx(sil, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
+    #sil = cv.morphologyEx(sil, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
+    img_viz = img.copy()
     if is_front_img:
-        sil_refined = refine_silhouette_front_img(img_org, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :], img)
+        sil_refined = refine_silhouette_front_img(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :], img_viz)
     else:
-        sil_refined = refine_silhouette_side_img(img_org, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :], img)
+        sil_refined = refine_silhouette_side_img(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :], img_viz)
 
+    sil_refined = cv.morphologyEx(sil_refined, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (5,5)))
     contour_refined = find_largest_contour(sil_refined, cv.CHAIN_APPROX_TC89_L1)
     sil_final = np.zeros_like(sil)
     cv.fillPoly(sil_final, pts=[contour_refined], color=(255, 255, 255))
-    return  sil_final
+    return  sil_refined, img_viz
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
@@ -334,9 +325,19 @@ if __name__ == '__main__':
             print('\t missing keypoint file', file=sys.stderr)
             continue
 
+        if 'side_' in str(img_path):
+            is_front_img = False
+        elif 'front_' in str(img_path):
+            is_front_img = True
+        else:
+            print('not a front or side image. please attach annation: front_ or side_ to front of the image name',
+                  file=sys.stderr)
+
+        img = cv.imread(str(img_path))
         keypoints = np.load(pose_path)
-        silhouette = extract_silhouette(img_path, keypoints)
+        silhouette, img_viz = extract_silhouette(img, is_front_img, keypoints)
         cv.imwrite(f'{OUT_SILHOUETTE_DIR}/{img_path.name}', silhouette)
+        cv.imwrite(f'{OUT_SILHOUETTE_DIR}/{img_path.stem}_viz.jpg', img_viz)
         continue
 
         # # visualization
