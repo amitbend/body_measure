@@ -56,19 +56,19 @@
             check the folder ../data/measurement for visualization
 
 
-    3.2. run all in one on a single image
-        body_measure_util.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -h_cm 165 -o                 ../data/measurement/
+4. run all in one on a single image
+    body_measure_util.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -h_cm 165 -o                 ../data/measurement/
 
-        check the folder ../data/measurement for visualization
+    check the folder ../data/measurement for visualization
 
-    3.3. visualize and interpret data
-        this code draws calculated slices from the previsous step on front and side images.
-        and print out width and depth of 2d slices in centimet.
-        
-        please check this code for information about the output data format
-        
-        note: for some measuremetn like neck, collar, wrist, etc, we can only extract their width from front image. their  
-        depth values are not available and printed out as -1
+5. visualize and interpret data
+    this code draws calculated slices from the previsous step on front and side images.
+    and print out width and depth of 2d slices in centimet.
 
-        viz_measurement_result.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -d             
-        ../data/measurement/IMG_1928_front_.npy
+    please check this code for information about the output data format
+
+    note: for some measuremetn like neck, collar, wrist, etc, we can only extract their width from front image. their  
+    depth values are not available and printed out as -1
+
+    viz_measurement_result.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -d             
+    ../data/measurement/IMG_1928_front_.npy
