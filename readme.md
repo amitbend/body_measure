@@ -4,11 +4,12 @@
         git clone https://github.com/khanhha/body_measure.git
 
     1.2. build OpenPose
+    
         1.2.1. cd to the folder body_measure
-
+        
         1.2.2. clone OpenPose to the same folder
             git clone https://github.com/CMU-Perceptual-Computing-Lab/openpose
-
+            
         1.2.3. follow this instruction to build OpenPose on  Linux 
             https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/installation.md
             Note: 
