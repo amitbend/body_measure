@@ -20,7 +20,6 @@ if __name__ == '__main__':
     path_s = args['side_img']
     height = args['height_cm']
     OUT_DIR = args['out_dir']
-
     height = float(height)
     img_f = cv.imread(path_f)
     img_s = cv.imread(path_s)
@@ -28,8 +27,8 @@ if __name__ == '__main__':
     keypoints_f, img_pose_f = find_pose(img_f)
     keypoints_s, img_pose_s = find_pose(img_s)
 
-    sil_f, img_viz_f = extract_silhouette(img_f, is_front_img = True,  keypoints  = keypoints_f)
-    sil_s, img_viz_s = extract_silhouette(img_s, is_front_img = False, keypoints  = keypoints_s)
+    sil_dl_f, sil_f = extract_silhouette(img_f, is_front_img = True,  keypoints  = keypoints_f)
+    sil_dl_s, sil_s = extract_silhouette(img_s, is_front_img = False, keypoints  = keypoints_s)
 
     #plt.subplot(121), plt.imshow(img_viz_f[:,:,::-1]), plt.imshow(sil_f, alpha=0.4)
     #plt.subplot(122), plt.imshow(img_viz_s[:,:,::-1]), plt.imshow(sil_s, alpha=0.4)
@@ -40,4 +39,6 @@ if __name__ == '__main__':
     path_s = Path(path_s)
     cv.imwrite(f'{OUT_DIR}/{path_f.stem}.jpg', img_viz)
     np.save(f'{OUT_DIR}/{path_f.stem}.npy', data)
+    print(f'output debug result to: {OUT_DIR}/{path_f.stem}.jpg')
+    print(f'output slice result to: {OUT_DIR}/{path_f.stem}.npy')
 

@@ -1066,11 +1066,13 @@ def normalize_measurement_based_on_height(height, landmarks_f, landmarks_s):
 
     measure_f = {}
     for id, points in landmarks_f.items():
-        measure_f[id] = ratio_f * linalg.norm(points[0]-points[1])
+        if id is not 'Height':
+            measure_f[id] = ratio_f * linalg.norm(points[0]-points[1])
 
     measure_s = {}
     for id, points in landmarks_s.items():
-        measure_s[id] = ratio_s * linalg.norm(points[0]-points[1])
+        if id is not 'Height':
+            measure_s[id] = ratio_s * linalg.norm(points[0]-points[1])
 
     return measure_f, measure_s
 
@@ -1122,7 +1124,7 @@ def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, 
     #np.save(f'{OUT_DIR}/{path_f.stem}_measure.npy', data)
 
     data = {'contour_f': contour_f, 'contour_s': contour_s,
-            'slices_f': slices_f, 'slices_s': slices_s,
+            'slices_f' : slices_f, 'slices_s': slices_s,
             'measure_f': measure_f, 'measure_s': measure_s}
 
     #img_pose_f = cv.imread(f'{POSE_DIR}/{path_f.stem}.png')
@@ -1202,7 +1204,7 @@ if __name__ == '__main__':
         if path_f.name in heights:
             height = heights[path_f.name]
         else:
-            height = None
+            height = 170
 
         img_f = cv.imread(str(path_f))
         keypoints_f = np.load(f'{POSE_DIR}/{path_f.stem}.npy')
@@ -1211,13 +1213,14 @@ if __name__ == '__main__':
         img_s = cv.imread(str(path_s))
         sil_s = load_silhouette(f'{SIL_DIR}{path_s.name}', img_s)
         keypoints_s = np.load(f'{POSE_DIR}/{path_s.stem}.npy')
-        plt.subplot(121)
-        plt.imshow(img_f)
-        plt.imshow(sil_f, alpha=0.4)
-        plt.subplot(122)
-        plt.imshow(img_s)
-        plt.imshow(sil_s, alpha=0.4)
-        plt.show()
+
+        # plt.subplot(121)
+        # plt.imshow(img_f)
+        # plt.imshow(sil_f, alpha=0.4)
+        # plt.subplot(122)
+        # plt.imshow(img_s)
+        # plt.imshow(sil_s, alpha=0.4)
+        # plt.show()
 
         data, final_viz = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height = height)
         cv.imwrite(f'{OUT_DIR}/{path_f.name}', final_viz)

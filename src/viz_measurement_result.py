@@ -44,6 +44,23 @@ if __name__ == '__main__':
     draw_slice_data(img_f, contour_f, slices_f)
     draw_slice_data(img_s, contour_s, slices_s)
 
+    print('width and depth of measurement\n')
+    for id, width in measure_f.items():
+        if id in ['Height', 'CollarBust', 'CollarWaist', 'InsideLeg']:
+            continue
+
+        if id in measure_s:
+            depth = measure_s[id]
+        else:
+            depth = -1
+        print("slice id = {0:30} : width = {1:20}, depth = {2:20}".format(id, width, depth))
+
+    print('\n\n')
+    print('other special measurements\n')
+    for id, distance in measure_f.items():
+        if id in ['CollarBust', 'CollarWaist', 'InsideLeg']:
+            print("slice id = {0:30} : distance = {1:20}".format(id, distance))
+
     plt.subplot(121)
     plt.imshow(img_f[:,:,::-1])
     plt.subplot(122)
