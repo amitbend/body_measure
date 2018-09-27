@@ -1089,6 +1089,21 @@ def calc_body_slices(sil_f, sil_s,  keypoints_f, keypoints_s):
 
     return contour_f, contour_s, slices_f, slices_s
 
+def draw_slice_data(img, contour, slices, LINE_THICKNESS = 2):
+    cv.drawContours(img, [contour], -1, color=(255, 0, 0), thickness=1)
+    for i in range(contour.shape[0]):
+        cv.drawMarker(img, int_tuple(contour[i, 0, :]), color=(0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
+
+    for name, points in slices.items():
+        if 'Aux_' not in name:
+            cv.line(img, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
+    #
+    for name, points in slices.items():
+        if 'Aux_' in name:
+            cv.line(img, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
+
+    cv.line(img, int_tuple(slices['Height'][0]), int_tuple(slices['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
+
 def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height):
     #MARKER_SIZE = 5
     #MARKER_THICKNESS = 5
@@ -1115,32 +1130,8 @@ def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, 
     img_pose_f = img_f.copy()
     img_pose_s = img_s.copy()
 
-    cv.drawContours(img_pose_f, [contour_f], -1, color=(255, 0, 0), thickness=1)
-    for i in range(contour_f.shape[0]):
-        cv.drawMarker(img_pose_f, int_tuple(contour_f[i, 0, :]), color=(0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
-
-    cv.drawContours(img_pose_s, [contour_s], -1, color=(255, 0, 0), thickness=1)
-    for i in range(contour_s.shape[0]):
-        cv.drawMarker(img_pose_s, int_tuple(contour_s[i,0,:]), color = (0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
-
-    for name, points in slices_f.items():
-        if 'Aux_' not in name:
-            cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
-    #
-    for name, points in slices_s.items():
-        if 'Aux_' not in name:
-            cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (0, 0, 255), thickness=LINE_THICKNESS)
-
-    for name, points in slices_f.items():
-        if 'Aux_' in name:
-            cv.line(img_pose_f, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
-    #
-    for name, points in slices_s.items():
-        if 'Aux_' in name:
-            cv.line(img_pose_s, int_tuple(points[0]), int_tuple(points[1]), (255, 0, 0), thickness=LINE_THICKNESS)
-
-    cv.line(img_pose_f, int_tuple(slices_f['Height'][0]), int_tuple(slices_f['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
-    cv.line(img_pose_s, int_tuple(slices_s['Height'][0]), int_tuple(slices_s['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
+    draw_slice_data(img_pose_f, contour_f, slices_f)
+    draw_slice_data(img_pose_s, contour_s, slices_s)
 
     # plt.clf()
     # plt.subplot(121), plt.imshow(img_pose_f[:, :, ::-1])
