@@ -99,6 +99,9 @@ def load_model_file():
 
     _TARBALL_NAME = 'deeplab_model.tar.gz'
     model_dir = '../data/deeplab_model/'
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+
     download_path = os.path.join(model_dir, _TARBALL_NAME)
     if not os.path.isfile(download_path):
         print('downloading deeplab model, this might take a while...')

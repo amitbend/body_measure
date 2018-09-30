@@ -8,7 +8,7 @@
     * move to the folder body_measure
     * clone OpenPose to the same folder
         * git clone https://github.com/CMU-Perceptual-Computing-Lab/openpose
-        * follow this instruction to build OpenPose on  Linux 
+        * follow this instruction to build OpenPose on  Linux. Ensure to set the flag "BUILD_PYTHON"
            https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/installation.md
       * Note: 
       I recommend NOT building OpenPose INSIDE an Anaconda environemnt.
@@ -18,10 +18,13 @@
 
   * create anaconda environment
   
-        conda create -n body python=3.5
-        conda activate body
+        conda create -n body python=3.6
+        if your conda >= 4.4
+            coda activate body
+        else
+            source activate body 
         conda install -c conda-forge opencv
-        conda install tensorflow-gpu shapely matplotlib pillow
+        conda install tensorflow-gpu shapely matplotlib pillow scipy 
 
 # run the code step by step
 ![alt text](./diagram.png "overview")
