@@ -1074,7 +1074,7 @@ def fix_silhouette(sil):
     sil = cv.morphologyEx(sil, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, ksize=(3,3)))
     return sil
 
-def normalize_measurement_based_on_height(height, landmarks_f, landmarks_s):
+def normalize_unit_to_height_unit(height, landmarks_f, landmarks_s):
     height_points_f = landmarks_f['Height']
     height_points_s = landmarks_s['Height']
     height_px_f = linalg.norm(height_points_f[0] - height_points_f[1])
@@ -1129,7 +1129,7 @@ def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, 
 
     contour_f, contour_s, slices_f, slices_s = calc_body_slices(sil_f, sil_s, keypoints_f, keypoints_s)
 
-    measure_f, measure_s = normalize_measurement_based_on_height(height, slices_f, slices_s)
+    measure_f, measure_s = normalize_unit_to_height_unit(height, slices_f, slices_s)
 
     data = {'contour_f': contour_f, 'contour_s': contour_s,
             'slices_f' : slices_f, 'slices_s': slices_s,

@@ -295,7 +295,9 @@ class SilhouetteExtractor():
 
         # note: in case of deeplab mobile model, the silhouette returned by deeplab is often wider than real silhouette,
         # therefore, we might need to erode it a bit to have a better approximation
-        # sil = cv.morphologyEx(sil, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
+        if not self.deeplab_wrapper.is_precise_model():
+            sil = cv.morphologyEx(sil, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
+
         if is_front_img:
             sil_refined = refine_silhouette_front_img(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :],
                                                       img_debug)

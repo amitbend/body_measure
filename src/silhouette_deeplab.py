@@ -65,9 +65,13 @@ LABEL_NAMES = np.asarray([
 ])
 
 class DeeplabWrapper():
-    def __init__(self, save_model_path = '../data/deeplab_model/'):
-
-        self.MODEL_NAME = 'xception_coco_voctrainval'  # @param ['mobilenetv2_coco_voctrainaug', 'mobilenetv2_coco_voctrainval', 'xception_coco_voctrainaug', 'xception_coco_voctrainval']
+    def __init__(self, is_mobile = True, save_model_path = '../data/deeplab_model/'):
+        # @param ['mobilenetv2_coco_voctrainaug', 'mobilenetv2_coco_voctrainval', 'xception_coco_voctrainaug', 'xception_coco_voctrainval']
+        self.is_mobile = is_mobile
+        if self.is_mobile == True:
+            self.MODEL_NAME = 'mobilenetv2_coco_voctrainaug'
+        else:
+            self.MODEL_NAME = 'xception_coco_voctrainval'
 
         _DOWNLOAD_URL_PREFIX = 'http://download.tensorflow.org/models/'
         _MODEL_URLS = {
@@ -81,7 +85,7 @@ class DeeplabWrapper():
                 'deeplabv3_pascal_trainval_2018_01_04.tar.gz',
         }
 
-        _TARBALL_NAME = 'deeplab_model.tar.gz'
+        _TARBALL_NAME = f'{self.MODEL_NAME}.tar.gz'
         if not os.path.exists(save_model_path):
             os.makedirs(save_model_path)
 
@@ -92,7 +96,10 @@ class DeeplabWrapper():
             print('download completed! loading DeepLab model...')
 
         self.MODEL = DeepLabModel(download_path)
-        print('model loaded successfully!')
+        print('deeplab model loaded!')
+
+    def is_precise_model(self):
+        return not self.is_mobile
 
     def extract_silhouette(self, img):
         resized_im, seg_map = self.MODEL.run(img)
