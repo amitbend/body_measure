@@ -738,39 +738,6 @@ def calc_contour_slice(contour_str, pos, hor_seg):
     else:
         return False, np.vstack([p0, p1])
 
-def estimate_front_leg_landmark_slices(contour_str_f, keypoints_f, crotch_pos_f, left_side, landmarks_f):
-    contour_leg_str_f =  extract_leg_contour(contour_str_f, keypoints_f, crotch_pos_f, left=left_side)
-
-    if left_side: prefix = 'L'
-    else: prefix = 'R'
-
-    hip =  keypoints_f[POSE_BODY_25_BODY_PART_IDXS[prefix  +'Hip']][:2]
-    knee =  keypoints_f[POSE_BODY_25_BODY_PART_IDXS[prefix +'Knee']][:2]
-    ankle =  keypoints_f[POSE_BODY_25_BODY_PART_IDXS[prefix+'Ankle']][:2]
-    #dir_hip_knee = normalize(hip - knee)
-    #dir_knee_ankle = normalize(knee - ankle)
-    leg_hor_dir = np.array([1,0])
-    ext_len = linalg.norm(hip-knee)
-
-    crotch_pos_on_leg_f = nearest_points(Point(crotch_pos_f), LineString([hip, knee]))[1]
-    crotch_pos_on_leg_f = np.array(crotch_pos_on_leg_f).flatten()
-
-    ret, points = calc_contour_slice(contour_leg_str_f, knee, ext_len*leg_hor_dir)
-    if ret: landmarks_f[prefix + 'Knee'] = points
-
-    pos = 0.5*(crotch_pos_on_leg_f+knee)
-    ret, points = calc_contour_slice(contour_leg_str_f, pos, ext_len*leg_hor_dir)
-    if ret: landmarks_f['Aux_' + prefix + 'Thigh'] = points
-
-    pos = ankle + 2.0/3.0 *(knee - ankle)
-    ret, points = calc_contour_slice(contour_leg_str_f, pos, ext_len*leg_hor_dir)
-    if ret: landmarks_f[prefix + 'BigUnderLeg'] = points
-
-    #move anke a bit higher to avoid perspective distortion effect; otherwise, we will measure cross section of the sandle
-    pos = ankle + 0.1 * (knee - ankle)
-    ret, points = calc_contour_slice(contour_leg_str_f, pos, ext_len*leg_hor_dir)
-    if ret: landmarks_f[prefix + 'Ankle'] = points
-
 def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
     landmarks_f = {}
     landmarks_s = {}
@@ -783,15 +750,18 @@ def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
     neck_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     midhip_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
 
-    if is_valid_keypoint_1(keypoints_s, 'LHip') and is_valid_keypoint_1(keypoints_s, 'LKnee'):
-        hip = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
-        knee = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['LKnee']][:2]
+    #todo: it could go wrong here
+    if is_valid_keypoint_1(keypoints_s, 'LHip') and is_valid_keypoint_1(keypoints_s, 'LKnee') and is_valid_keypoint_1(keypoints_s, 'LAnkle'):
+        hip_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
+        knee_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['LKnee']][:2]
+        ankle_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['LAnkle']][:2]
     else:
-        hip = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['RHip']][:2]
-        knee = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['RKnee']][:2]
+        hip_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['RHip']][:2]
+        knee_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['RKnee']][:2]
+        ankle_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['RAnkle']][:2]
 
     torso_hor_seg_s = linalg.norm(neck_s - midhip_s)*np.array([1,0])
-    thigh_hor_seg_s = linalg.norm(knee - hip)*np.array([1,0])
+    leg_hor_seg_s = linalg.norm(knee_s - hip_s)*np.array([1,0])
 
     points = estimate_side_height(contour_s, keypoints_s)
     landmarks_s['Height'] = points
@@ -808,11 +778,11 @@ def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
     is_ok, points, under_bust_pos_s= estimate_side_under_bust(contour_str_s, keypoints_s, bust_pos_s)
     if is_ok: landmarks_s['UnderBust'] = points
 
-    is_ok, points =  calc_contour_slice(contour_str_s, hip, 2*torso_hor_seg_s)
-    hip_pos_s = hip.copy()
+    is_ok, points =  calc_contour_slice(contour_str_s, hip_s, 2*torso_hor_seg_s)
+    hip_pos_s = hip_s.copy()
     if is_ok: landmarks_s['Hip'] = points
 
-    is_ok, points =  calc_contour_slice(contour_str_s, knee, thigh_hor_seg_s)
+    is_ok, points =  calc_contour_slice(contour_str_s, knee_s, leg_hor_seg_s)
     if is_ok: landmarks_s['Knee'] = points
 
     is_side_crotch_found, points, crotch_pos_s, crotch_ratio_s = estimate_side_crotch(contour_str_s, keypoints_s)
@@ -837,17 +807,22 @@ def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
         if is_ok: landmarks_s['Aux_Armscye_Shoulder_0'] = points
 
         aux_crotch_hip_0_s = 0.5*(crotch_pos_s+  hip_pos_s)
-        is_ok, points =  calc_contour_slice(contour_str_s, aux_crotch_hip_0_s, thigh_hor_seg_s)
+        is_ok, points =  calc_contour_slice(contour_str_s, aux_crotch_hip_0_s, leg_hor_seg_s)
         if is_ok: landmarks_s['Aux_Crotch_Hip_0'] = points
 
-        pos = 0.5*(knee+crotch_pos_s)
-        ret, points = calc_contour_slice(contour_str_s, pos, thigh_hor_seg_s)
+        pos = 0.5*(knee_s+crotch_pos_s)
+        ret, points = calc_contour_slice(contour_str_s, pos, leg_hor_seg_s)
         if ret: landmarks_s['Aux_Thigh_0'] = points
 
+        ret, points = calc_contour_slice(contour_str_s, knee_s, leg_hor_seg_s)
+        if ret: landmarks_s['Knee'] = points
+
+        pos = ankle_s + 2.0 / 3.0 * (knee_s - ankle_s)
+        ret, points = calc_contour_slice(contour_str_s, pos, leg_hor_seg_s)
+        if ret: landmarks_s['Calf'] = points
 
     ###############################################################################################
     #front image
-    neck_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     midhip_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
     lshouder_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
     rshouder_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
@@ -943,18 +918,18 @@ def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
     # left or right elbow
     is_ok, points = estimate_front_elbow(contour_str_f, keypoints_f, left=True)
     if is_ok:
-        landmarks_f['LElbow'] = points
+        landmarks_f['Elbow'] = points
     else:
         is_ok, points = estimate_front_elbow(contour_str_f, keypoints_f, left=False)
-        if is_ok: landmarks_f['RElbow'] = points
+        if is_ok: landmarks_f['Elbow'] = points
 
     #left or right wrist
     is_ok, points = estimate_front_wrist(contour_str_f, keypoints_f, left=True)
     if is_ok:
-        landmarks_f['LWrist'] = points
+        landmarks_f['Wrist'] = points
     else:
         is_ok, points = estimate_front_wrist(contour_str_f, keypoints_f, left=False)
-        if is_ok: landmarks_f['RWrist'] = points
+        if is_ok: landmarks_f['Wrist'] = points
 
     ##########################################################
     # inside leg
@@ -962,8 +937,36 @@ def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
     landmarks_f['InsideLeg'] = points
 
     ##########################################################
-    estimate_front_leg_landmark_slices(contour_str_f, keypoints_f, crotch_pos_f, left_side=True, landmarks_f=landmarks_f)
-    #estimate_leg_landmark_slices(contour_str_f, keypoints_f, crotch_pos_f, left_side=False, landmarks_f=landmarks_f)
+    #Leg slices
+    left_side = True
+    if left_side: prefix = 'L'
+    else: prefix = 'R'
+
+    contour_leg_str_f =  extract_leg_contour(contour_str_f, keypoints_f, crotch_pos_f, left=left_side)
+
+    hip_f =  keypoints_f[POSE_BODY_25_BODY_PART_IDXS[prefix  +'Hip']][:2]
+    knee_f =  keypoints_f[POSE_BODY_25_BODY_PART_IDXS[prefix +'Knee']][:2]
+    ankle_f =  keypoints_f[POSE_BODY_25_BODY_PART_IDXS[prefix+'Ankle']][:2]
+    leg_hor_seg_f = linalg.norm(hip_f-knee_f) * np.array([1,0])
+
+    crotch_pos_on_leg_f = nearest_points(Point(crotch_pos_f), LineString([hip_f, knee_f]))[1]
+    crotch_pos_on_leg_f = np.array(crotch_pos_on_leg_f).flatten()
+
+    ret, points = calc_contour_slice(contour_leg_str_f, knee_f, leg_hor_seg_f)
+    if ret: landmarks_f['Knee'] = points
+
+    pos = 0.5*(crotch_pos_on_leg_f+knee_f)
+    ret, points = calc_contour_slice(contour_leg_str_f, pos, leg_hor_seg_f)
+    if ret: landmarks_f['Aux_Thigh_0'] = points
+
+    pos = ankle_f + 2.0/3.0 *(knee_f - ankle_f)
+    ret, points = calc_contour_slice(contour_leg_str_f, pos, leg_hor_seg_f)
+    if ret: landmarks_f['Calf'] = points
+
+    #move anke a bit higher to avoid perspective distortion effect; otherwise, we will measure cross section of the sandle
+    pos = ankle_f + 0.1 * (knee_f - ankle_f)
+    ret, points = calc_contour_slice(contour_leg_str_f, pos, leg_hor_seg_f)
+    if ret: landmarks_f['Ankle'] = points
 
     return landmarks_f, landmarks_s
 
@@ -1103,19 +1106,11 @@ def draw_slice_data(img, contour, slices, LINE_THICKNESS = 2):
 def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height):
     #MARKER_SIZE = 5
     #MARKER_THICKNESS = 5
-    LINE_THICKNESS = 2
+    #LINE_THICKNESS = 2
 
     contour_f, contour_s, slices_f, slices_s = calc_body_slices(sil_f, sil_s, keypoints_f, keypoints_s)
 
-    #data = {'contour_f': contour_f, 'contour_s': contour_s}
-    #np.save(f'{OUT_DIR}/{path_f.stem}_contour.npy', data)
-
-    #data = {'slices_f': slices_f, 'slices_s': slices_s}
-    #np.save(f'{OUT_DIR}/{path_f.stem}_slice.npy', data)
-
     measure_f, measure_s = normalize_measurement_based_on_height(height, slices_f, slices_s)
-    #data = {'measure_f': measure_f, 'measure_s': measure_s}
-    #np.save(f'{OUT_DIR}/{path_f.stem}_measure.npy', data)
 
     data = {'contour_f': contour_f, 'contour_s': contour_s,
             'slices_f' : slices_f, 'slices_s': slices_s,
