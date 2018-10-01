@@ -28,10 +28,10 @@ class BodyMeasure():
         sil_dl_s, sil_s = sil_extractor.extract_silhouette(img_s, is_front_img=False, keypoints=keypoints_s,
                                                            img_debug=None)
         if is_viz_result == True:
-            data, img_viz = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug=True)
+            data, img_viz   = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug=True)
             return data, img_viz
         else:
-            data = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug=False)
+            data            = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug=False)
             return data
 
 if __name__ == '__main__':

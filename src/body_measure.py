@@ -1086,13 +1086,95 @@ def normalize_unit_to_height_unit(height, landmarks_f, landmarks_s):
     for id, points in landmarks_f.items():
         if id is not 'Height':
             measure_f[id] = ratio_f * linalg.norm(points[0]-points[1])
+        else:
+            measure_f[id] = -1
 
     measure_s = {}
     for id, points in landmarks_s.items():
         if id is not 'Height':
             measure_s[id] = ratio_s * linalg.norm(points[0]-points[1])
+        else:
+            measure_s[id] = -1
 
     return measure_f, measure_s
+
+#a: major len
+#b: minor len
+def ellipse_perimeter(a, b):
+    return np.pi * (3*(a+b) - np.sqrt((3*a+b) * (a+3*b)) )
+
+def approximate_body_measurement_with_ellipse_perimeter(measure_f, measure_s):
+    measurements = {}
+
+    val = -1
+    if measure_f['Neck'] != -1:
+        neck_w = measure_f['Neck']
+        val = ellipse_perimeter(neck_w, neck_w)
+    measurements['Neck_Circumference'] = val
+
+    val = -1
+    if  measure_f['Collar'] != -1 and measure_f['Neck'] != -1:
+        val = ellipse_perimeter(measure_f['Collar'], measure_f['Neck'])
+    measurements['Collar_Circumference'] = val
+
+    val = -1
+    if  measure_f['CollarWaist'] != -1:
+        val = measure_f['CollarWaist']
+    measurements['Collar_To_Waist_Length'] = val
+
+    val = -1
+    if measure_f['CollarBust'] != -1:
+        val = measure_f['CollarBust']
+    measurements['Collar_To_Bust_Length'] = val
+
+    val = -1
+    if  measure_f['Shoulder'] != -1:
+        val = measure_f['Shoulder']
+    measurements['Shoulder_To_Shoulder_Length'] = val
+
+    val = -1
+    if measure_f['Bust'] != -1 and measure_s['Bust'] != -1:
+        val = ellipse_perimeter(measure_f['Bust'], measure_s['Bust'])
+    measurements['Bust_Circumference'] = val
+
+    val = -1
+    if measure_f['UnderBust'] != -1 and measure_s['UnderBust'] != -1:
+        val = ellipse_perimeter(measure_f['UnderBust'], measure_s['UnderBust'])
+    measurements['UnderBust_Circumference'] = val
+
+    val = -1
+    if measure_f['Waist'] != -1 and measure_s['Waist'] != -1:
+        val = ellipse_perimeter(measure_f['Waist'], measure_s['Waist'])
+    measurements['Waist_Circumference'] = val
+
+    val = -1
+    if measure_f['Hip'] != -1 and measure_s['Hip'] != -1:
+        val = ellipse_perimeter(measure_f['Hip'], measure_s['Hip'])
+    measurements['Hip_Circumference'] = val
+
+    val = -1
+    if measure_f['Aux_Thigh_0'] != -1 and measure_s['Aux_Thigh_0'] != -1:
+        val = ellipse_perimeter(measure_f['Aux_Thigh_0'], measure_s['Aux_Thigh_0'])
+    measurements['MidThigh_Circumference'] = val
+
+    val = -1
+    if measure_f['Knee'] != -1 and measure_s['Knee'] != -1:
+        val = ellipse_perimeter(measure_f['Knee'], measure_s['Knee'])
+    measurements['Knee_Circumference'] = val
+
+    val = -1
+    if measure_f['Calf'] != -1 and measure_s['Calf'] != -1:
+        val = ellipse_perimeter(measure_f['Calf'], measure_s['Calf'])
+    measurements['Calf_Circumference'] = val
+
+    val = -1
+    #approximate ankle as a circle
+    if measure_f['Ankle'] != -1:
+        w = measure_f['Ankle']
+        val = ellipse_perimeter(w, w)
+    measurements['Ankle_Circumference'] = val
+
+    return measurements
 
 def calc_body_slices(sil_f, sil_s,  keypoints_f, keypoints_s):
     contour_f = ut.find_largest_contour(sil_f, app_type=cv.CHAIN_APPROX_NONE)
@@ -1131,9 +1213,12 @@ def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, 
 
     measure_f, measure_s = normalize_unit_to_height_unit(height, slices_f, slices_s)
 
+    measurements = approximate_body_measurement_with_ellipse_perimeter(measure_f, measure_s)
+
     data = {'contour_f': contour_f, 'contour_s': contour_s,
             'slices_f' : slices_f, 'slices_s': slices_s,
-            'measure_f': measure_f, 'measure_s': measure_s}
+            'measure_f': measure_f, 'measure_s': measure_s,
+            'measurements' : measurements}
 
     if is_debug:
         #img_pose_f = cv.imread(f'{POSE_DIR}/{path_f.stem}.png')

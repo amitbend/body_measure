@@ -36,6 +36,7 @@ if __name__ == '__main__':
     slices_s  = data.item().get('slices_s')
     measure_f = data.item().get('measure_f')
     measure_s = data.item().get('measure_s')
+    measurements = data.item().get('measurements')
 
     if contour_f is None or contour_s is None or slices_f is None or slices_s is None:
         print('missing measurement data', file=sys.stderr)
@@ -56,10 +57,13 @@ if __name__ == '__main__':
         print("slice id = {0:30} : width = {1:20}, depth = {2:20}".format(id, width, depth))
 
     print('\n\n')
-    print('other special measurements\n')
-    for id, distance in measure_f.items():
-        if id in ['CollarBust', 'CollarWaist', 'InsideLeg']:
-            print("slice id = {0:30} : distance = {1:20}".format(id, distance))
+    print('body measurements in height unit\n')
+    for id, val in measurements.items():
+        print("measurement type = {0:30} : value = {1:20}".format(id, val))
+
+    #for id, distance in measure_f.items():
+    #    if id in ['CollarBust', 'CollarWaist', 'InsideLeg']:
+    #        print("slice id = {0:30} : distance = {1:20}".format(id, distance))
 
     plt.subplot(121)
     plt.imshow(img_f[:,:,::-1])
