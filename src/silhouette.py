@@ -5,7 +5,7 @@ import numpy as np
 import numpy.linalg as linalg
 import argparse
 from pathlib import Path
-from silhouette_deeplab import dl_extract_silhouette
+from src.silhouette_deeplab import DeeplabWrapper
 from util import is_valid_keypoint, is_valid_keypoint_1, pair_length, pair_dir, orthor_dir, extend_segment, find_largest_contour, int_tuple
 from util import  POSE_BODY_25_BODY_PART_IDXS
 from pose_to_trimap import gen_fg_bg_masks, head_center_estimate
@@ -278,28 +278,38 @@ def fix_silhouette(sil):
     sil = cv.morphologyEx(sil, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, ksize=(3,3)))
     return sil
 
-def extract_silhouette(img, is_front_img, keypoints, img_debug=None):
-    sil = dl_extract_silhouette(img)
+class SilhouetteExtractor():
+    def __init__(self):
+        self.deeplab_wrapper = DeeplabWrapper()
 
-    bg_mask = cv.morphologyEx(sil, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (15, 15)))
+    def extract_silhouette(self, img, is_front_img, keypoints, img_debug=None):
+        sil = self.deeplab_wrapper.extract_silhouette(img)
 
-    sure_fg_mask, _ = gen_fg_bg_masks(img, keypoints, front_view=True)
-    sure_fg_mask = (sure_fg_mask == 255)
-    sure_bg_mask = (bg_mask != 255)
+        bg_mask = cv.morphologyEx(sil, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (15, 15)))
 
-    contour = find_largest_contour(sil, cv.CHAIN_APPROX_TC89_L1)
+        sure_fg_mask, _ = gen_fg_bg_masks(img, keypoints, front_view=True)
+        sure_fg_mask = (sure_fg_mask == 255)
+        sure_bg_mask = (bg_mask != 255)
 
-    #sil = cv.morphologyEx(sil, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
-    if is_front_img:
-        sil_refined = refine_silhouette_front_img(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :], img_debug)
-    else:
-        sil_refined = refine_silhouette_side_img(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :], img_debug)
+        contour = find_largest_contour(sil, cv.CHAIN_APPROX_TC89_L1)
 
-    sil_refined = cv.morphologyEx(sil_refined, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (5,5)))
-    contour_refined = find_largest_contour(sil_refined, cv.CHAIN_APPROX_TC89_L1)
-    sil_final = np.zeros_like(sil)
-    cv.fillPoly(sil_final, pts=[contour_refined], color=(255, 255, 255))
-    return  sil, sil_refined
+        # note: in case of deeplab mobile model, the silhouette returned by deeplab is often wider than real silhouette,
+        # therefore, we might need to erode it a bit to have a better approximation
+        # sil = cv.morphologyEx(sil, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
+        if is_front_img:
+            sil_refined = refine_silhouette_front_img(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :],
+                                                      img_debug)
+        else:
+            sil_refined = refine_silhouette_side_img(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :],
+                                                     img_debug)
+
+        sil_refined = cv.morphologyEx(sil_refined, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (5, 5)))
+        contour_refined = find_largest_contour(sil_refined, cv.CHAIN_APPROX_TC89_L1)
+        sil_final = np.zeros_like(sil)
+        cv.fillPoly(sil_final, pts=[contour_refined], color=(255, 255, 255))
+
+        return sil, sil_refined
+
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
@@ -316,6 +326,8 @@ if __name__ == '__main__':
 
     for f in Path(OUT_SILHOUETTE_DIR).glob('*.*'):
         os.remove(f)
+
+    sil_extractor = SilhouetteExtractor()
 
     for img_path in Path(IMG_DIR).glob('*.*'):
         print(img_path)
@@ -335,7 +347,7 @@ if __name__ == '__main__':
         img = cv.imread(str(img_path))
         keypoints = np.load(pose_path)
         img_debug = img.copy()
-        sil_deeplab, sil_refined = extract_silhouette(img, is_front_img, keypoints, img_debug=img_debug)
+        sil_deeplab, sil_refined = sil_extractor.extract_silhouette(img, is_front_img, keypoints, img_debug=img_debug)
         if img_debug is not None:
             contour = find_largest_contour(sil_deeplab, cv.CHAIN_APPROX_TC89_L1)
             cv.drawContours(img_debug, [contour], -1, color=(0,255,255), thickness=2)

@@ -58,80 +58,59 @@ class DeepLabModel(object):
     seg_map = batch_seg_map[0]
     return resized_image, seg_map
 
-
-def create_pascal_label_colormap():
-  """Creates a label colormap used in PASCAL VOC segmentation benchmark.
-
-  Returns:
-    A Colormap for visualizing segmentation results.
-  """
-  colormap = np.zeros((256, 3), dtype=int)
-  ind = np.arange(256, dtype=int)
-
-  for shift in reversed(range(8)):
-    for channel in range(3):
-      colormap[:, channel] |= ((ind >> channel) & 1) << shift
-    ind >>= 3
-
-  return colormap
-
 LABEL_NAMES = np.asarray([
     'background', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus',
     'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike',
     'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tv'
 ])
 
-G_MODEL = None
-def load_model_file():
-    global G_MODEL
-    MODEL_NAME = 'xception_coco_voctrainval'  # @param ['mobilenetv2_coco_voctrainaug', 'mobilenetv2_coco_voctrainval', 'xception_coco_voctrainaug', 'xception_coco_voctrainval']
-    _DOWNLOAD_URL_PREFIX = 'http://download.tensorflow.org/models/'
-    _MODEL_URLS = {
-        'mobilenetv2_coco_voctrainaug':
-            'deeplabv3_mnv2_pascal_train_aug_2018_01_29.tar.gz',
-        'mobilenetv2_coco_voctrainval':
-            'deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz',
-        'xception_coco_voctrainaug':
-            'deeplabv3_pascal_train_aug_2018_01_04.tar.gz',
-        'xception_coco_voctrainval':
-            'deeplabv3_pascal_trainval_2018_01_04.tar.gz',
-    }
+class DeeplabWrapper():
+    def __init__(self, save_model_path = '../data/deeplab_model/'):
 
-    _TARBALL_NAME = 'deeplab_model.tar.gz'
-    model_dir = '../data/deeplab_model/'
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
+        self.MODEL_NAME = 'xception_coco_voctrainval'  # @param ['mobilenetv2_coco_voctrainaug', 'mobilenetv2_coco_voctrainval', 'xception_coco_voctrainaug', 'xception_coco_voctrainval']
 
-    download_path = os.path.join(model_dir, _TARBALL_NAME)
-    if not os.path.isfile(download_path):
-        print('downloading deeplab model, this might take a while...')
-        urllib.request.urlretrieve(_DOWNLOAD_URL_PREFIX + _MODEL_URLS[MODEL_NAME], download_path)
-        print('download completed! loading DeepLab model...')
+        _DOWNLOAD_URL_PREFIX = 'http://download.tensorflow.org/models/'
+        _MODEL_URLS = {
+            'mobilenetv2_coco_voctrainaug':
+                'deeplabv3_mnv2_pascal_train_aug_2018_01_29.tar.gz',
+            'mobilenetv2_coco_voctrainval':
+                'deeplabv3_mnv2_pascal_trainval_2018_01_29.tar.gz',
+            'xception_coco_voctrainaug':
+                'deeplabv3_pascal_train_aug_2018_01_04.tar.gz',
+            'xception_coco_voctrainval':
+                'deeplabv3_pascal_trainval_2018_01_04.tar.gz',
+        }
 
-    G_MODEL = DeepLabModel(download_path)
-    print('model loaded successfully!')
+        _TARBALL_NAME = 'deeplab_model.tar.gz'
+        if not os.path.exists(save_model_path):
+            os.makedirs(save_model_path)
 
-def dl_extract_silhouette(img):
-    global G_MODEL
-    if G_MODEL is None:
-        load_model_file()
+        download_path = os.path.join(save_model_path, _TARBALL_NAME)
+        if not os.path.isfile(download_path):
+            print('downloading deeplab model, this might take a while...')
+            urllib.request.urlretrieve(_DOWNLOAD_URL_PREFIX + _MODEL_URLS[self.MODEL_NAME], download_path)
+            print('download completed! loading DeepLab model...')
 
-    resized_im, seg_map = G_MODEL.run(img)
-    silhouette_mask = (seg_map == 15)
-    silhouette = silhouette_mask.astype(np.uint8) * 255
-    silhouette = cv.morphologyEx(silhouette, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (7, 7)))
-    nb_components, output, stats, centroids = cv.connectedComponentsWithStats(silhouette, connectivity=4)
-    sizes = stats[:, -1]
-    max_label = 1
-    max_size = sizes[1]
-    for i in range(2, nb_components):
-        if sizes[i] > max_size:
-            max_label = i
-            max_size = sizes[i]
+        self.MODEL = DeepLabModel(download_path)
+        print('model loaded successfully!')
 
-    silhouette_1 = np.zeros(output.shape, np.uint8)
-    silhouette_1[output == max_label] = 255
-    silhouette_1 = cv.morphologyEx(silhouette_1, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (5, 5)))
-    silhouette_1 = cv.resize(silhouette_1, img.shape[:2][::-1], cv.INTER_NEAREST)
+    def extract_silhouette(self, img):
+        resized_im, seg_map = self.MODEL.run(img)
+        silhouette_mask = (seg_map == 15)
+        silhouette = silhouette_mask.astype(np.uint8) * 255
+        silhouette = cv.morphologyEx(silhouette, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, (7, 7)))
+        nb_components, output, stats, centroids = cv.connectedComponentsWithStats(silhouette, connectivity=4)
+        sizes = stats[:, -1]
+        max_label = 1
+        max_size = sizes[1]
+        for i in range(2, nb_components):
+            if sizes[i] > max_size:
+                max_label = i
+                max_size = sizes[i]
 
-    return silhouette_1
+        silhouette_1 = np.zeros(output.shape, np.uint8)
+        silhouette_1[output == max_label] = 255
+        silhouette_1 = cv.morphologyEx(silhouette_1, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, (5, 5)))
+        silhouette_1 = cv.resize(silhouette_1, img.shape[:2][::-1], cv.INTER_NEAREST)
+
+        return silhouette_1

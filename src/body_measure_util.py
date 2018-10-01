@@ -4,10 +4,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 import argparse
-from pose_extract import find_pose
-from silhouette import extract_silhouette
-from body_measure import calc_body_slices_util
-
+from src.pose_extract import PoseExtractor
+from src.silhouette import SilhouetteExtractor
+from src.body_measure import calc_body_slices_util
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument("-f", "--front_img", required=True, help="front image path")
@@ -24,17 +23,25 @@ if __name__ == '__main__':
     img_f = cv.imread(path_f)
     img_s = cv.imread(path_s)
 
-    keypoints_f, img_pose_f = find_pose(img_f)
-    keypoints_s, img_pose_s = find_pose(img_s)
+    pose_extractor = PoseExtractor()
+    #keypoints_s, img_pose_s = pose_extractor.extract_pose(img_s, debug=True)
+    #keypoints_f, img_pose_f = pose_extractor.extract_pose(img_f, debug=True)
+    keypoints_s = pose_extractor.extract_pose(img_s, debug=False)
+    keypoints_f = pose_extractor.extract_pose(img_f, debug=False)
+    del pose_extractor
 
-    sil_dl_f, sil_f = extract_silhouette(img_f, is_front_img = True,  keypoints  = keypoints_f)
-    sil_dl_s, sil_s = extract_silhouette(img_s, is_front_img = False, keypoints  = keypoints_s)
+    #Todo: deeplab model takes up almost 10gb GPU memory. needs to find a more efficient way to load it
+    sil_extractor = SilhouetteExtractor()
+
+    sil_dl_f, sil_f = sil_extractor.extract_silhouette(img_f, is_front_img = True,  keypoints  = keypoints_f, img_debug=None)
+    sil_dl_s, sil_s = sil_extractor.extract_silhouette(img_s, is_front_img = False, keypoints  = keypoints_s, img_debug=None)
 
     #plt.subplot(121), plt.imshow(img_viz_f[:,:,::-1]), plt.imshow(sil_f, alpha=0.4)
     #plt.subplot(122), plt.imshow(img_viz_s[:,:,::-1]), plt.imshow(sil_s, alpha=0.4)
     #plt.show()
 
-    data, img_viz = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height)
+    data, img_viz = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug=True)
+
     path_f = Path(path_f)
     path_s = Path(path_s)
     cv.imwrite(f'{OUT_DIR}/{path_f.stem}.jpg', img_viz)

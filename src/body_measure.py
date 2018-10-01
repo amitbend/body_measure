@@ -1124,10 +1124,8 @@ def draw_slice_data(img, contour, slices, LINE_THICKNESS = 2):
 
     cv.line(img, int_tuple(slices['Height'][0]), int_tuple(slices['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
 
-def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height):
-    #MARKER_SIZE = 5
-    #MARKER_THICKNESS = 5
-    #LINE_THICKNESS = 2
+#is_debug = True: draw body slices on input images
+def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug = True):
 
     contour_f, contour_s, slices_f, slices_s = calc_body_slices(sil_f, sil_s, keypoints_f, keypoints_s)
 
@@ -1137,23 +1135,20 @@ def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, 
             'slices_f' : slices_f, 'slices_s': slices_s,
             'measure_f': measure_f, 'measure_s': measure_s}
 
-    #img_pose_f = cv.imread(f'{POSE_DIR}/{path_f.stem}.png')
-    #img_pose_s = cv.imread(f'{POSE_DIR}/{path_s.stem}.png')
-    img_pose_f = img_f.copy()
-    img_pose_s = img_s.copy()
+    if is_debug:
+        #img_pose_f = cv.imread(f'{POSE_DIR}/{path_f.stem}.png')
+        #img_pose_s = cv.imread(f'{POSE_DIR}/{path_s.stem}.png')
+        img_pose_f = img_f.copy()
+        img_pose_s = img_s.copy()
 
-    draw_slice_data(img_pose_f, contour_f, slices_f)
-    draw_slice_data(img_pose_s, contour_s, slices_s)
+        draw_slice_data(img_pose_f, contour_f, slices_f)
+        draw_slice_data(img_pose_s, contour_s, slices_s)
 
-    # plt.clf()
-    # plt.subplot(121), plt.imshow(img_pose_f[:, :, ::-1])
-    # plt.subplot(122), plt.imshow(img_pose_s[:, :, ::-1])
-    # plt.savefig(f'{OUT_DIR}{path_f.stem}_viz.png', dpi=1000)
-    # plt.show()
+        final_vis = np.concatenate((img_pose_f, img_pose_s), axis=1)
 
-    final_vis = np.concatenate((img_pose_f, img_pose_s), axis=1)
-
-    return data, final_vis
+        return data, final_vis
+    else:
+        return data
 
 def load_pair_info(pair_text_file_path):
     pairs = []

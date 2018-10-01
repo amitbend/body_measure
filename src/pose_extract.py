@@ -53,6 +53,35 @@ def find_pose(img):
 
     return keypoints, img_pose
 
+class PoseExtractor:
+    def __init__(self):
+        params = dict()
+        params["logging_level"] = 3
+        params["output_resolution"] = "-1x-1"
+        params["net_resolution"] = "-1x368"
+        params["model_pose"] = "BODY_25"
+        params["alpha_pose"] = 0.6
+        params["scale_gap"] = 0.3
+        params["scale_number"] = 1
+        params["render_threshold"] = 0.05
+        # If GPU version is built, and multiple GPUs are available, set the ID here
+        params["num_gpu_start"] = 0
+        params["disable_blending"] = False
+        # Ensure you point to the correct path where models are located
+        params["default_model_folder"] = OPENPOSE_MODEL_PATH
+        # Construct OpenPose object allocates GPU memory
+        print('loading Openpose model....')
+        self.openpose = OpenPose(params)
+        print('loaded Openpose model sucessfully')
+
+    def extract_pose(self, img, debug = True):
+        if debug == True:
+            keypoints, img_pose = self.openpose.forward(img, True)
+            return keypoints, img_pose
+        else:
+            keypoints = self.openpose.forward(img, False)
+            return keypoints
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--input_dir", required=True, help="image folder")
@@ -67,10 +96,12 @@ if __name__ == '__main__':
     for f in Path(DIR_OUT).glob('*.*'):
         os.remove(f)
 
+    extractor = PoseExtractor()
+
     for img_path in Path(DIR_IN).glob('*.*'):
         print(img_path)
         img = cv.imread(str(img_path))
-        keypoints, img_pose = find_pose(img)
+        keypoints, img_pose = extractor.extract_pose(img, debug=True)
         cv.imwrite(f'{DIR_OUT}/{img_path.stem}.png',img_pose)
         np.save(f'{DIR_OUT}/{img_path.stem}.npy', keypoints)
 
