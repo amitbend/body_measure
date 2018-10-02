@@ -447,6 +447,21 @@ def estimate_front_armpit(contour, keypoints):
 
     return np.vstack([larmpit, rarmpit])
 
+def estimate_front_upper_arm(contour_str_f, keypoints_f, larmpit, rarmpit):
+    lshoulder = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
+    lelbow = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LElbow']][:2]
+
+    on_bone = nearest_points(Point(larmpit), LineString([lshoulder, lelbow]))[1]
+    on_bone = np.array(on_bone.coords).flatten()
+
+    #move a bit toward elbow to avoid noise
+    on_bone = on_bone + 0.1*(lelbow-lshoulder)
+    hor_seg = 0.5*orthor_dir(lshoulder-lelbow)
+
+    is_ok, points = calc_contour_slice(contour_str_f, on_bone, hor_seg)
+
+    return is_ok,points
+
 def estimate_side_crotch(contour_str, keypoints, hor_dir = np.array([1,0])):
     if is_valid_keypoint_1(keypoints, 'LHip') and is_valid_keypoint_1(keypoints, 'LKnee'):
         hip  = keypoints[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
@@ -846,6 +861,8 @@ def estimate_landmark_front_slices(contour_f, keypoints_f,
     midhip_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
     lshouder_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
     rshouder_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
+    lelbow_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LElbow']][:2]
+    lwrist_f = keypoints_f[POSE_BODY_25_BODY_PART_IDXS['LWrist']][:2]
     torso_hor_seg_f = 2*linalg.norm(lshouder_f - rshouder_f)*np.array([1,0])
 
     # height
@@ -860,10 +877,19 @@ def estimate_landmark_front_slices(contour_f, keypoints_f,
     points, shoulder_pos_f = estimate_front_shoulder_points(contour_str_f, keypoints_f)
     landmarks_f['Shoulder'] = points
 
+    # should - elbow
+    landmarks_f['Shoulder_Elbow'] = np.vstack([lshouder_f, lelbow_f])
+
+    # should - wrist
+    landmarks_f['Shoulder_Wrist'] = np.vstack([lshouder_f, lwrist_f])
+
     # armpit
     is_ok, armpits_f = estimate_front_armpit_1(contour_str_f, keypoints_f)
     armpit_l_f = armpits_f[0]
     armpit_r_f = armpits_f[1]
+
+    is_ok, points = estimate_front_upper_arm(contour_str_f, keypoints_f, armpit_l_f, armpit_r_f)
+    if is_ok: landmarks_f['UpperArm'] = points
 
     # crotch
     ret, points, crotch_pos_f = estimate_front_crotch(contour_str_f, keypoints_f, crotch_ratio_s)
@@ -1173,6 +1199,32 @@ def approximate_body_measurement_with_ellipse_perimeter(measure_f, measure_s):
         w = measure_f['Ankle']
         val = ellipse_perimeter(w, w)
     measurements['Ankle_Circumference'] = val
+
+    val = -1
+    # approximate elbow as a circle
+    if measure_f['Elbow'] != -1:
+        w = measure_f['Elbow']
+        val = ellipse_perimeter(w, w)
+    measurements['Elbow_Circumference'] = val
+
+    val = -1
+    # approximate upper arm as a circle
+    if measure_f['UpperArm'] != -1:
+        w = measure_f['UpperArm']
+        val = ellipse_perimeter(w, w)
+    measurements['UpperArm_Circumference'] = val
+
+
+    val = -1
+    # approximate upper arm as a circle
+    if measure_f['Shoulder_Elbow'] != -1:
+        val = measure_f['Shoulder_Elbow']
+    measurements['Shoulder_To_Elbow_Length'] = val
+
+
+    if measure_f['Shoulder_Wrist'] != -1:
+        val = measure_f['Shoulder_Wrist']
+    measurements['Shoulder_To_Wrist_Length'] = val
 
     return measurements
 
