@@ -149,3 +149,6 @@ def pair_dir(keypoints, name_0, name_1):
         return (p0[:2] - p1[:2])
     else:
         return (0,0)
+
+def preprocess_image(img):
+    return cv.resize(img, (768,1024), cv.INTER_AREA)

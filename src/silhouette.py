@@ -6,9 +6,12 @@ import numpy.linalg as linalg
 import argparse
 from pathlib import Path
 from src.silhouette_deeplab import DeeplabWrapper
-from util import is_valid_keypoint, is_valid_keypoint_1, pair_length, pair_dir, orthor_dir, extend_segment, find_largest_contour, int_tuple
-from util import  POSE_BODY_25_BODY_PART_IDXS
-from pose_to_trimap import gen_fg_bg_masks, head_center_estimate
+import tensorflow as tf
+import matplotlib.pyplot as plt
+from src.util import  preprocess_image
+from src.util import is_valid_keypoint, is_valid_keypoint_1, pair_length, pair_dir, orthor_dir, extend_segment, find_largest_contour, int_tuple
+from src.util import  POSE_BODY_25_BODY_PART_IDXS
+from src.pose_to_trimap import gen_fg_bg_masks, head_center_estimate
 
 def extend_rect(rect, percent_w, percent_h):
     w_ext = percent_w * rect[2]
@@ -37,6 +40,10 @@ def grabcut_local_window(img, sil, sure_fg_mask = None, sure_bg_mask = None, rec
         sure_bg_mask_rect = sure_bg_mask[rect[1]:rect[1] + rect[3], rect[0]:rect[0] + rect[2]]
         mask[sure_bg_mask_rect] = cv.GC_BGD
 
+    if img_viz is not None:
+        color = np.random.randint(0, 255, 3)
+        cv.rectangle(img_viz, (rect[0], rect[1]), (rect[0]+rect[2], rect[1]+rect[3]), color=int_tuple(color), thickness=3)
+
     for i in range(2):
         bgdmodel = np.zeros((1, 65), np.float64)
         fgdmodel = np.zeros((1, 65), np.float64)
@@ -48,8 +55,10 @@ def grabcut_local_window(img, sil, sure_fg_mask = None, sure_bg_mask = None, rec
         edges = cv.morphologyEx(edges, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (2, 2)))
         rect_viz = img_viz[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2], :]
         rect_viz[edges> 0] = (0,0,255)
-        color = np.random.randint(0, 255, 3)
-        cv.rectangle(img_viz, (rect[0], rect[1]), (rect[0]+rect[2], rect[1]+rect[3]), color=int_tuple(color), thickness=3)
+        # plt.imshow(img_viz[:,:,::-1])
+        # plt.imshow(sure_fg_mask, alpha=0.2, cmap='Wistia')
+        # plt.imshow(sure_bg_mask, alpha=0.2, cmap='cool')
+        # plt.show()
 
     return sil_1
 
@@ -82,6 +91,17 @@ def grabcut_local_window_head_front_img(img, sil, sure_fg_mask, sure_bg_mask, ke
 
     points = np.vstack([neck, over_head, lshoulder, rshoulder])
     x, y, w, h = rect_bounds(points, img.shape)
+    rect = (x, y, w, h)
+
+    #for head, we shrink the sure foreground mask because DeepLab often has error around head area
+    shrink_size = int(0.2*w)
+    head_sure_fg_mask = sil[rect[1]:rect[1]+rect[3], rect[0]:rect[0]+rect[2]].astype(np.uint8)
+    head_sure_fg_mask = cv.morphologyEx(head_sure_fg_mask, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (shrink_size, shrink_size)))
+    sil[rect[1]:rect[1] + rect[3], rect[0]:rect[0] + rect[2]] = head_sure_fg_mask
+    # plt.imshow(img[:,:,::-1])
+    # plt.imshow(sil, alpha=0.3)
+    # plt.show()
+
     sil_part = grabcut_local_window(img, sil, sure_fg_mask, sure_bg_mask, (x, y, w, h), img_viz)
     return (x, y, w, h), sil_part
 
@@ -106,6 +126,9 @@ def grabcut_local_window_shoulder_front_img(img, sil, sure_fg_mask, sure_bg_mask
 def grabcut_local_window_torso_front_img(img, sil, sure_fg_mask, sure_bg_mask, keypoints, img_viz):
     lshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['LShoulder']][:2]
     rshoulder = keypoints[POSE_BODY_25_BODY_PART_IDXS['RShoulder']][:2]
+    #lower shoulder a bit
+    lshoulder[1] += 0.2 * linalg.norm(lshoulder-rshoulder)
+    rshoulder[1] += 0.2 * linalg.norm(lshoulder-rshoulder)
     lshoulder_ext, rshoulder_ext = extend_segment(lshoulder, rshoulder, 0.25)
 
     hip  = keypoints[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
@@ -185,6 +208,7 @@ def grabcut_local_window_head_side_img(img, sil, sure_fg_mask, sure_bg_mask, key
     p0 = head_center + orthor_dir(neck_head)
     p1 = head_center - orthor_dir(neck_head)
     x,y,w,h = rect_bounds(np.vstack([neck, over_head, p0, p1]), img.shape)
+
     sil_part = grabcut_local_window(img, sil, sure_fg_mask, sure_bg_mask, (x, y, w, h), img_viz)
 
     return (x, y, w, h), sil_part
@@ -285,11 +309,16 @@ class SilhouetteExtractor():
     def extract_silhouette(self, img, is_front_img, keypoints, img_debug=None):
         sil = self.deeplab_wrapper.extract_silhouette(img)
 
-        bg_mask = cv.morphologyEx(sil, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (15, 15)))
+        bg_mask = cv.morphologyEx(sil, cv.MORPH_DILATE, cv.getStructuringElement(cv.MORPH_RECT, (30, 30)))
 
         sure_fg_mask, _ = gen_fg_bg_masks(img, keypoints, front_view=True)
         sure_fg_mask = (sure_fg_mask == 255)
         sure_bg_mask = (bg_mask != 255)
+
+        # plt.imshow(img[:,:,::-1])
+        # plt.imshow(sure_fg_mask, alpha=0.4)
+        # plt.imshow(sure_bg_mask, alpha=0.4)
+        # plt.show()
 
         contour = find_largest_contour(sil, cv.CHAIN_APPROX_TC89_L1)
 
@@ -323,6 +352,8 @@ if __name__ == '__main__':
     POSE_DIR = args['pose_dir'] + '/'
     OUT_SILHOUETTE_DIR = args['output_dir'] + '/'
 
+    tf.logging.set_verbosity(tf.logging.WARN)
+
     if not os.path.exists(OUT_SILHOUETTE_DIR):
         os.makedirs(OUT_SILHOUETTE_DIR)
 
@@ -337,6 +368,9 @@ if __name__ == '__main__':
         if not os.path.isfile(pose_path):
             print('\t missing keypoint file', file=sys.stderr)
             continue
+        #
+        # if 'IMG_1930' not in str(img_path):
+        #     continue
 
         if 'side_' in str(img_path):
             is_front_img = False
@@ -347,6 +381,7 @@ if __name__ == '__main__':
                   file=sys.stderr)
 
         img = cv.imread(str(img_path))
+        img = preprocess_image(img)
         keypoints = np.load(pose_path)
         img_debug = img.copy()
         sil_deeplab, sil_refined = sil_extractor.extract_silhouette(img, is_front_img, keypoints, img_debug=img_debug)

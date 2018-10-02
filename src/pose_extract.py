@@ -3,6 +3,7 @@ import cv2 as cv
 import platform
 import argparse
 from pathlib import Path
+from src.util import  preprocess_image
 import os
 import sys
 
@@ -101,6 +102,7 @@ if __name__ == '__main__':
     for img_path in Path(DIR_IN).glob('*.*'):
         print(img_path)
         img = cv.imread(str(img_path))
+        img = preprocess_image(img)
         keypoints, img_pose = extractor.extract_pose(img, debug=True)
         cv.imwrite(f'{DIR_OUT}/{img_path.stem}.png',img_pose)
         np.save(f'{DIR_OUT}/{img_path.stem}.npy', keypoints)

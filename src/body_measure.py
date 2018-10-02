@@ -4,8 +4,8 @@ import numpy as np
 import numpy.linalg as linalg
 import matplotlib.pyplot as plt
 from pathlib import Path
-import util as ut
-from util import (is_valid_keypoint, is_valid_keypoint_1, pair_dir, int_tuple)
+import src.util as ut
+from src.util import (is_valid_keypoint, is_valid_keypoint_1, pair_dir, int_tuple)
 from shapely.geometry import LineString, Point, MultiPoint
 from shapely.ops import nearest_points
 import argparse

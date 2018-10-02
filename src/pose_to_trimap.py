@@ -1,8 +1,8 @@
 import numpy as np
 import numpy.linalg as linalg
 import cv2 as cv
-from util import POSE_BODY_25_PAIRS_RENDER_GPU, POSE_BODY_25_BODY_PARTS, POSE_BODY_25_BODY_PART_IDXS, KEYPOINT_THRESHOLD
-from util import normalize, extend_segment
+from src.util import POSE_BODY_25_PAIRS_RENDER_GPU, POSE_BODY_25_BODY_PARTS, POSE_BODY_25_BODY_PART_IDXS, KEYPOINT_THRESHOLD
+from src.util import normalize, extend_segment
 
 def is_pair_equal(pair_0, pair_1):
     if (pair_0[0] == pair_1[0] and pair_0[1] == pair_1[1]) or \
