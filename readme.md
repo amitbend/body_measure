@@ -65,12 +65,9 @@
 * check the folder ../data/measurement for visualization
 
 # visualize and interpret data
-* this program draws slices calculated from the previsous steps on front and side images.
-and print out width and depth of 2d slices in centimet.
+* this program draws landmark segments on front and side images.
+and print out their length in centimet. It also print out body measurements estimated from these segments
 * please check the code for information about the output data format
-
-* note: for some measuremetn like neck, collar, wrist, etc, we can only extract their width from front image. their  
-depth values are not available and printed out as -1
 
 * run: viz_measurement_result.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -d            
     ../data/measurement/IMG_1928_front_.npy

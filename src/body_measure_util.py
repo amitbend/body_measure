@@ -54,7 +54,6 @@ if __name__ == '__main__':
     img_s = cv.imread(str(path_s))
 
     body_measure = BodyMeasure()
-    print(f' start measure time')
     start = time.time()
     #data =  body_measure.process(img_f, img_s, height, is_viz_result=False)
     data, img_viz =  body_measure.process(img_f, img_s, height, is_viz_result=True)
