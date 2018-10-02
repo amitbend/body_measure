@@ -4,7 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 from pathlib import Path
-from body_measure import draw_slice_data
+from src.body_measure import draw_slice_data
+from src.util import  preprocess_image
 import argparse
 
 if __name__ == '__main__':
@@ -28,6 +29,9 @@ if __name__ == '__main__':
         print('side image does not exist', file=sys.stderr)
         exit()
 
+    img_f = preprocess_image(img_f)
+    img_s = preprocess_image(img_s)
+
     data = np.load(data_path)
 
     contour_f = data.item().get('contour_f')
@@ -49,7 +53,6 @@ if __name__ == '__main__':
     for id, width in measure_f.items():
         if id in ['Height', 'CollarBust', 'CollarWaist', 'InsideLeg']:
             continue
-
         if id in measure_s:
             depth = measure_s[id]
         else:

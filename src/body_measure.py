@@ -5,7 +5,7 @@ import numpy.linalg as linalg
 import matplotlib.pyplot as plt
 from pathlib import Path
 import src.util as ut
-from src.util import (is_valid_keypoint, is_valid_keypoint_1, pair_dir, int_tuple)
+from src.util import (is_valid_keypoint_1, pair_dir, int_tuple, preprocess_image)
 from shapely.geometry import LineString, Point, MultiPoint
 from shapely.ops import nearest_points
 import argparse
@@ -1178,13 +1178,13 @@ def approximate_body_measurement_with_ellipse_perimeter(measure_f, measure_s):
 
 def calc_body_slices(sil_f, sil_s,  keypoints_f, keypoints_s):
     contour_f = ut.find_largest_contour(sil_f, app_type=cv.CHAIN_APPROX_NONE)
-    contour_f = ut.smooth_contour(contour_f, 10)
+    contour_f = ut.smooth_contour(contour_f, 5)
     contour_f = ut.resample_contour(contour_f, 720)
 
     # load and process side images
     #img_s, sil_s = resize_img_to_fit_silhouette(img_s, sil_s)
     contour_s = ut.find_largest_contour(sil_s, app_type=cv.CHAIN_APPROX_NONE)
-    contour_s = ut.smooth_contour(contour_s, 10)
+    contour_s = ut.smooth_contour(contour_s, 5)
     contour_s = ut.resample_contour(contour_s, 720)
 
     slices_f, slices_s = estimate_landmark_slices(contour_f, keypoints_f[0, :, :], contour_s, keypoints_s[0, :, :])
@@ -1194,7 +1194,7 @@ def calc_body_slices(sil_f, sil_s,  keypoints_f, keypoints_s):
 def draw_slice_data(img, contour, slices, LINE_THICKNESS = 2):
     cv.drawContours(img, [contour], -1, color=(255, 0, 0), thickness=1)
     for i in range(contour.shape[0]):
-        cv.drawMarker(img, int_tuple(contour[i, 0, :]), color=(0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=1, thickness=1)
+        cv.drawMarker(img, int_tuple(contour[i, 0, :]), color=(0, 0, 255), markerType=cv.MARKER_SQUARE, markerSize=2, thickness=1)
 
     for name, points in slices.items():
         if 'Aux_' not in name:
@@ -1271,10 +1271,13 @@ if __name__ == '__main__':
         path_s = Path(f'{IMG_DIR}{img_name_s}')
 
         img_f = cv.imread(str(path_f))
+        img_f = preprocess_image(img_f)
+
         keypoints_f = np.load(f'{POSE_DIR}/{path_f.stem}.npy')
         sil_f = load_silhouette(f'{SIL_DIR}{path_f.name}', img_f)
 
         img_s = cv.imread(str(path_s))
+        img_s = preprocess_image(img_s)
         keypoints_s = np.load(f'{POSE_DIR}/{path_s.stem}.npy')
         sil_s = load_silhouette(f'{SIL_DIR}{path_s.name}', img_s)
 
