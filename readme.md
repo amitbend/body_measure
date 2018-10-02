@@ -65,8 +65,7 @@
 * check the folder ../data/measurement for visualization
 
 # visualize and interpret data
-* this program draws landmark segments on front and side images.
-and print out their length in centimet. It also print out body measurements estimated from these segments
+* this program draws landmark segments calculated from previous step on front and side image and print out their length in centimet. It also print out body measurements estimated from these segments
 * please check the code for information about the output data format
 
 * run: viz_measurement_result.py -f ../data/images/IMG_1928_front_.JPG -s ../data/images/IMG_1928_side_.JPG -d            
