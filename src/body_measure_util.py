@@ -6,7 +6,7 @@ from pathlib import Path
 import argparse
 from src.pose_extract import PoseExtractor
 from src.silhouette import SilhouetteExtractor
-from src.body_measure import calc_body_slices_util
+from src.body_measure import calc_body_landmarks_util
 from src.util import preprocess_image
 import time
 class BodyMeasure():
@@ -28,10 +28,10 @@ class BodyMeasure():
         sil_dl_s, sil_s = self.sil_extractor.extract_silhouette(img_s, is_front_img=False, keypoints=keypoints_s,
                                                            img_debug=None)
         if is_viz_result == True:
-            data, img_viz   = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug=True)
+            data, img_viz   = calc_body_landmarks_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug=True)
             return data, img_viz
         else:
-            data            = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug=False)
+            data            = calc_body_landmarks_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug=False)
             return data
 
 if __name__ == '__main__':

@@ -36,28 +36,28 @@ if __name__ == '__main__':
 
     contour_f = data.item().get('contour_f')
     contour_s = data.item().get('contour_s')
-    slices_f  = data.item().get('slices_f')
-    slices_s  = data.item().get('slices_s')
-    measure_f = data.item().get('measure_f')
-    measure_s = data.item().get('measure_s')
-    measurements = data.item().get('measurements')
+    segments_f  = data.item().get('landmark_segment_f')
+    segments_s  = data.item().get('landmark_segment_s')
+    seg_dst_f = data.item().get('landmark_segment_dst_f')
+    seg_dst_s = data.item().get('landmark_segment_dst_s')
+    measurements = data.item().get('measurement')
 
-    if contour_f is None or contour_s is None or slices_f is None or slices_s is None:
+    if contour_f is None or contour_s is None or segments_f is None or segments_s is None:
         print('missing measurement data', file=sys.stderr)
         exit()
 
-    draw_slice_data(img_f, contour_f, slices_f)
-    draw_slice_data(img_s, contour_s, slices_s)
+    draw_slice_data(img_f, contour_f, segments_f)
+    draw_slice_data(img_s, contour_s, segments_s)
 
-    print('width and depth of measurement\n')
-    for id, width in measure_f.items():
-        if id in ['Height', 'CollarBust', 'CollarWaist', 'InsideLeg']:
-            continue
-        if id in measure_s:
-            depth = measure_s[id]
+    print('length of segment in front and side image\n')
+    for id, width in seg_dst_f.items():
+        #if id in ['Height', 'CollarBust', 'CollarWaist', 'InsideLeg']:
+        #    continue
+        if id in seg_dst_s:
+            depth = seg_dst_s[id]
         else:
             depth = -1
-        print("slice id = {0:30} : width = {1:20}, depth = {2:20}".format(id, width, depth))
+        print("landmark segment id = {0:30} : width = {1:20}, depth = {2:20}".format(id, width, depth))
 
     print('\n\n')
     print('body measurements in height unit\n')

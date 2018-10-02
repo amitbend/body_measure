@@ -753,7 +753,7 @@ def calc_contour_slice(contour_str, pos, hor_seg):
     else:
         return False, np.vstack([p0, p1])
 
-def estimate_landmark_side_slices(contour_s, keypoints_s):
+def estimate_landmark_side_segments(contour_s, keypoints_s):
     landmarks_s = {}
     contour_str_s = LineString([contour_s[i,0,:] for i in range(contour_s.shape[0])])
 
@@ -850,8 +850,8 @@ def estimate_landmark_side_slices(contour_s, keypoints_s):
 
     return landmarks_s, armscye_ratio_s, bust_ratio_s, under_bust_ratio_s, crotch_ratio_s
 
-def estimate_landmark_front_slices(contour_f, keypoints_f,
-                                   armscye_ratio_s, bust_ratio_s, under_bust_ratio_s, crotch_ratio_s):
+def estimate_landmark_front_segments(contour_f, keypoints_f,
+                                     armscye_ratio_s, bust_ratio_s, under_bust_ratio_s, crotch_ratio_s):
     landmarks_f = {}
 
     contour_str_f = LineString([contour_f[i,0,:] for i in range(contour_f.shape[0])])
@@ -1012,9 +1012,9 @@ def estimate_landmark_front_slices(contour_f, keypoints_f,
 
     return landmarks_f
 
-def estimate_landmark_slices(contour_f, keypoints_f, contour_s, keypoints_s):
-    landmarks_s, armscye_ratio_s, bust_ratio_s, under_bust_ratio_s, crotch_ratio_s  = estimate_landmark_side_slices(contour_s, keypoints_s)
-    landmarks_f = estimate_landmark_front_slices(contour_f, keypoints_f, armscye_ratio_s, bust_ratio_s, under_bust_ratio_s, crotch_ratio_s)
+def estimate_landmark_segments(contour_f, keypoints_f, contour_s, keypoints_s):
+    landmarks_s, armscye_ratio_s, bust_ratio_s, under_bust_ratio_s, crotch_ratio_s  = estimate_landmark_side_segments(contour_s, keypoints_s)
+    landmarks_f = estimate_landmark_front_segments(contour_f, keypoints_f, armscye_ratio_s, bust_ratio_s, under_bust_ratio_s, crotch_ratio_s)
     return landmarks_f, landmarks_s
 
 def extend_rect(rect, percent, img_shape):
@@ -1129,7 +1129,7 @@ def normalize_unit_to_height_unit(height, landmarks_f, landmarks_s):
 def ellipse_perimeter(a, b):
     return np.pi * (3*(a+b) - np.sqrt((3*a+b) * (a+3*b)) )
 
-def approximate_body_measurement_with_ellipse_perimeter(measure_f, measure_s):
+def approximate_body_measurement_as_ellipse_perimeter(measure_f, measure_s):
     measurements = {}
 
     val = -1
@@ -1228,7 +1228,7 @@ def approximate_body_measurement_with_ellipse_perimeter(measure_f, measure_s):
 
     return measurements
 
-def calc_body_slices(sil_f, sil_s,  keypoints_f, keypoints_s):
+def calc_body_landmarks(sil_f, sil_s, keypoints_f, keypoints_s):
     contour_f = ut.find_largest_contour(sil_f, app_type=cv.CHAIN_APPROX_NONE)
     contour_f = ut.smooth_contour(contour_f, 5)
     contour_f = ut.resample_contour(contour_f, 720)
@@ -1239,7 +1239,7 @@ def calc_body_slices(sil_f, sil_s,  keypoints_f, keypoints_s):
     contour_s = ut.smooth_contour(contour_s, 5)
     contour_s = ut.resample_contour(contour_s, 720)
 
-    slices_f, slices_s = estimate_landmark_slices(contour_f, keypoints_f[0, :, :], contour_s, keypoints_s[0, :, :])
+    slices_f, slices_s = estimate_landmark_segments(contour_f, keypoints_f[0, :, :], contour_s, keypoints_s[0, :, :])
 
     return contour_f, contour_s, slices_f, slices_s
 
@@ -1259,18 +1259,18 @@ def draw_slice_data(img, contour, slices, LINE_THICKNESS = 2):
     cv.line(img, int_tuple(slices['Height'][0]), int_tuple(slices['Height'][1]), (0, 255, 255), thickness=LINE_THICKNESS + 2)
 
 #is_debug = True: draw body slices on input images
-def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug = True):
+def calc_body_landmarks_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug = True):
 
-    contour_f, contour_s, slices_f, slices_s = calc_body_slices(sil_f, sil_s, keypoints_f, keypoints_s)
+    contour_f, contour_s, segments_f, segments_s = calc_body_landmarks(sil_f, sil_s, keypoints_f, keypoints_s)
 
-    measure_f, measure_s = normalize_unit_to_height_unit(height, slices_f, slices_s)
+    segment_dst_f, segment_dst_s = normalize_unit_to_height_unit(height, segments_f, segments_s)
 
-    measurements = approximate_body_measurement_with_ellipse_perimeter(measure_f, measure_s)
+    measurements = approximate_body_measurement_as_ellipse_perimeter(segment_dst_f, segment_dst_s)
 
     data = {'contour_f': contour_f, 'contour_s': contour_s,
-            'slices_f' : slices_f, 'slices_s': slices_s,
-            'measure_f': measure_f, 'measure_s': measure_s,
-            'measurements' : measurements}
+            'landmark_segment_f' : segments_f, 'landmark_segment_s': segments_s,
+            'landmark_segment_dst_f': segment_dst_f, 'landmark_segment_dst_s': segment_dst_s,
+            'measurement' : measurements}
 
     if is_debug:
         #img_pose_f = cv.imread(f'{POSE_DIR}/{path_f.stem}.png')
@@ -1278,8 +1278,8 @@ def calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, 
         img_pose_f = img_f.copy()
         img_pose_s = img_s.copy()
 
-        draw_slice_data(img_pose_f, contour_f, slices_f)
-        draw_slice_data(img_pose_s, contour_s, slices_s)
+        draw_slice_data(img_pose_f, contour_f, segments_f)
+        draw_slice_data(img_pose_s, contour_s, segments_s)
 
         final_vis = np.concatenate((img_pose_f, img_pose_s), axis=1)
 
@@ -1341,7 +1341,7 @@ if __name__ == '__main__':
         # plt.imshow(sil_s, alpha=0.4)
         # plt.show()
 
-        data, final_viz = calc_body_slices_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height = height)
+        data, final_viz = calc_body_landmarks_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height = height)
         cv.imwrite(f'{OUT_DIR}/{path_f.name}', final_viz)
 
         np.save(f'{OUT_DIR}/{path_f.stem}.npy', data)
