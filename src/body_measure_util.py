@@ -12,6 +12,7 @@ import time
 class BodyMeasure():
     def __init__(self):
         self.pose_extractor = PoseExtractor()
+        self.sil_extractor = SilhouetteExtractor()
         pass
 
     def process(self, img_f, img_s, height, is_viz_result = True):
@@ -22,14 +23,12 @@ class BodyMeasure():
         keypoints_f = self.pose_extractor.extract_pose(img_f, debug=False)
         keypoints_s = self.pose_extractor.extract_pose(img_s, debug=False)
 
-        sil_extractor = SilhouetteExtractor()
         # TODO: Silhouette Deeplab model takes around 10gb of GPU memory.
         # if we construct it in the __init__ function, it will cause out of memory on OpenPose
-        _, sil_f = sil_extractor.extract_silhouette(img_f, is_front_img=True,  keypoints=keypoints_f,
+        _, sil_f = self.sil_extractor.extract_silhouette(img_f, is_front_img=True,  keypoints=keypoints_f,
                                                            img_debug=None)
-        _, sil_s = sil_extractor.extract_silhouette(img_s, is_front_img=False, keypoints=keypoints_s,
+        _, sil_s = self.sil_extractor.extract_silhouette(img_s, is_front_img=False, keypoints=keypoints_s,
                                                            img_debug=None)
-        del sil_extractor
 
         if is_viz_result == True:
             data, img_viz   = calc_body_landmarks_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_s, height, is_debug=True)

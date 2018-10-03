@@ -5,7 +5,7 @@ import os
 import tarfile
 from six.moves import urllib
 import numpy as np
-from PIL import Image
+import time
 
 class DeepLabModel(object):
   """Class to load deeplab model and run inference."""
@@ -36,9 +36,12 @@ class DeepLabModel(object):
     with self.graph.as_default():
       tf.import_graph_def(graph_def, name='')
 
-    #TODO: find out how to reduce  deeplab session. a session now takes up to 10GB memory
-    #self.sess = tf.Session(graph=self.graph)
+    #TODO: find out how to reduce  deeplab session. a session now takes up to 10GB memory. Currently, we get around it by forcing tensorflow running on CPU
+    config = tf.ConfigProto(device_count={'GPU': 0})
+    #config = None
+    self.sess = tf.Session(graph=self.graph, config=config)
 
+    #time.sleep(10000000)
   def run(self, image):
     """Runs inference on a single image.
 
@@ -53,12 +56,12 @@ class DeepLabModel(object):
     resize_ratio = 1.0 * self.INPUT_SIZE / max(width, height)
     target_size = (int(resize_ratio * width), int(resize_ratio * height))
     resized_image = cv.resize(image, target_size, interpolation=cv.INTER_AREA)
-    with tf.Session(graph=self.graph) as sess:
-        batch_seg_map = sess.run(
-            self.OUTPUT_TENSOR_NAME,
-            feed_dict={self.INPUT_TENSOR_NAME: [np.asarray(resized_image)]})
-        seg_map = batch_seg_map[0]
-        return resized_image, seg_map
+    #with tf.Session(graph=self.graph) as sess:
+    batch_seg_map = self.sess.run(
+        self.OUTPUT_TENSOR_NAME,
+        feed_dict={self.INPUT_TENSOR_NAME: [np.asarray(resized_image)]})
+    seg_map = batch_seg_map[0]
+    return resized_image, seg_map
 
 LABEL_NAMES = np.asarray([
     'background', 'aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus',
