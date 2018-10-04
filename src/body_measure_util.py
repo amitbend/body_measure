@@ -1,19 +1,61 @@
 import cv2 as cv
 import os
+import tensorflow.test as test_util
 import numpy as np
 import matplotlib.pyplot as plt
+import time
+import sys
 from pathlib import Path
 import argparse
 from src.pose_extract import PoseExtractor
 from src.silhouette import SilhouetteExtractor
 from src.body_measure import calc_body_landmarks_util
 from src.util import preprocess_image
-import time
+
 class BodyMeasure():
     def __init__(self):
+        # use this option if you have a good GPU because tensorflow is very hungry for memory. it starts with 1GB and grows quickly to 10GB
+        self.use_gpu = False
+        #we need more checking to be able to use deeplab mobile version. its precision is not good now
+        self.use_deeplab_mobile=False
+        #TODO: use device_lib of tensorfow will cause an allocation of 10GB. we need a smarter way to do it
+        #self.check_hardware_requirement()
+        mem_require = self.total_min_gpu_mem_requirement()
+        print(f'Please make sure that you have at least {mem_require} GB of free GPU mem')
         self.pose_extractor = PoseExtractor()
-        self.sil_extractor = SilhouetteExtractor()
+        self.sil_extractor = SilhouetteExtractor(use_gpu=self.use_gpu, use_mobile_model=self.use_deeplab_mobile)
         pass
+
+    def get_available_gpus(self):
+        from tensorflow.python.client import device_lib
+        local_device_protos = device_lib.list_local_devices()
+        return [d for d in local_device_protos if d.device_type == 'GPU']
+
+    #require mininum memory requiremetn in gigabite unit
+    def min_deeplab_mem_requirement(self):
+        if self.use_gpu:
+            if self.use_deeplab_mobile:
+                return 0.5
+            else:
+                return 1.3
+        else:
+            #don't know why. even we don't construct tensorflow with GPU, the GPU mem still increases by 0.4G
+            return 0.4
+
+    #for openpose, we always use GPU. not CPU support now
+    def min_openpose_mem_requirement(self):
+        return 1.3
+
+    def total_min_gpu_mem_requirement(self):
+        return self.min_deeplab_mem_requirement() + self.min_openpose_mem_requirement()
+
+    def check_hardware_requirement(self):
+        if not test_util.is_gpu_available() and self.use_gpu:
+            print('GPU is not available but Deeplab is configued with GPU', file=sys.stderr)
+
+        gpus = self.get_available_gpus()
+        for gpu in gpus:
+            print(gpu)
 
     def process(self, img_f, img_s, height, is_viz_result = True):
 
@@ -57,10 +99,12 @@ if __name__ == '__main__':
     img_s = cv.imread(str(path_s))
 
     body_measure = BodyMeasure()
-    start = time.time()
-    #data =  body_measure.process(img_f, img_s, height, is_viz_result=False)
-    data, img_viz =  body_measure.process(img_f, img_s, height, is_viz_result=True)
-    print(f' total time = {time.time() - start}')
+    n_test = 10
+    for i in range(n_test):
+        start = time.time()
+        #data =  body_measure.process(img_f, img_s, height, is_viz_result=False)
+        data, img_viz =  body_measure.process(img_f, img_s, height, is_viz_result=True)
+        print(f'total time of test {i} = {time.time() - start}')
 
     np.save(f'{OUT_DIR}/{path_f.stem}.npy', data)
     print(f'output slice result to: {OUT_DIR}/{path_f.stem}.npy')
@@ -69,3 +113,4 @@ if __name__ == '__main__':
         cv.imwrite(f'{OUT_DIR}/{path_f.stem}.jpg', img_viz)
         print(f'output debug result to: {OUT_DIR}/{path_f.stem}.jpg')
 
+    time.sleep(10000)

@@ -303,8 +303,10 @@ def fix_silhouette(sil):
     return sil
 
 class SilhouetteExtractor():
-    def __init__(self):
-        self.deeplab_wrapper = DeeplabWrapper()
+    #use_mobile_mode: True => less precise but much faster on CPU.
+    #use_gpu: run deeplab inference on GPU
+    def __init__(self, use_mobile_model = False, use_gpu=False):
+        self.deeplab_wrapper = DeeplabWrapper(use_mobile_model=use_mobile_model, use_gpu=use_gpu)
 
     def extract_silhouette(self, img, is_front_img, keypoints, img_debug=None):
         sil = self.deeplab_wrapper.extract_silhouette(img)
@@ -321,11 +323,13 @@ class SilhouetteExtractor():
         # plt.show()
 
         contour = find_largest_contour(sil, cv.CHAIN_APPROX_TC89_L1)
+        if img_debug is not None:
+            cv.drawContours(img_debug, [contour], -1, color=(155,155,0), thickness=2)
 
         # note: in case of deeplab mobile model, the silhouette returned by deeplab is often wider than real silhouette,
         # therefore, we might need to erode it a bit to have a better approximation
         if not self.deeplab_wrapper.is_precise_model():
-            sil = cv.morphologyEx(sil, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (20, 20)))
+            sil = cv.morphologyEx(sil, cv.MORPH_ERODE, cv.getStructuringElement(cv.MORPH_RECT, (13, 13)))
 
         if is_front_img:
             sil_refined = refine_silhouette_front_img(img, sil, sure_fg_mask, sure_bg_mask, contour, keypoints[0, :, :],
@@ -360,7 +364,7 @@ if __name__ == '__main__':
     for f in Path(OUT_SILHOUETTE_DIR).glob('*.*'):
         os.remove(f)
 
-    sil_extractor = SilhouetteExtractor()
+    sil_extractor = SilhouetteExtractor(use_mobile_model = False, use_gpu=False)
 
     for img_path in Path(IMG_DIR).glob('*.*'):
         print(img_path)
