@@ -37,11 +37,14 @@ class DeepLabModel(object):
       tf.import_graph_def(graph_def, name='')
 
     #TODO: find out how to reduce  deeplab session. a session now takes up to 10GB memory. Currently, we get around it by forcing tensorflow running on CPU
-    config = tf.ConfigProto(device_count={'GPU': 0})
+    #config = tf.ConfigProto(device_count={'GPU': 0})
     #config = None
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    config.gpu_options.per_process_gpu_memory_fraction = 0.1
     self.sess = tf.Session(graph=self.graph, config=config)
-
     #time.sleep(10000000)
+
   def run(self, image):
     """Runs inference on a single image.
 

@@ -28,7 +28,8 @@ if __name__ == '__main__':
     if img_s is None:
         print('side image does not exist', file=sys.stderr)
         exit()
-
+    print(path_f)
+    print(path_s)
     img_f = preprocess_image(img_f)
     img_s = preprocess_image(img_s)
 
@@ -41,6 +42,7 @@ if __name__ == '__main__':
     seg_dst_f = data.item().get('landmark_segment_dst_f')
     seg_dst_s = data.item().get('landmark_segment_dst_s')
     measurements = data.item().get('measurement')
+    segments_height  = data.item().get('landmark_segment_height')
 
     if contour_f is None or contour_s is None or segments_f is None or segments_s is None:
         print('missing measurement data', file=sys.stderr)
@@ -58,6 +60,12 @@ if __name__ == '__main__':
         else:
             depth = -1
         print("landmark segment id = {0:30} : width = {1:20}, depth = {2:20}".format(id, width, depth))
+
+    print('\n\n')
+    print('segment relative height\n')
+    for id, val in segments_height.items():
+        print("relative height value of segment {0:30}  = {1:20}".format(id, val))
+
 
     print('\n\n')
     print('body measurements in height unit\n')

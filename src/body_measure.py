@@ -846,7 +846,15 @@ def estimate_landmark_side_segments(contour_s, keypoints_s):
 
     pos = ankle_s + 2.0 / 3.0 * (knee_s - ankle_s)
     ret, points = calc_contour_slice(contour_str_s, pos, leg_hor_seg_s)
-    if ret: landmarks_s['Calf'] = points
+    calf_len = 0.2 * np.linalg.norm(knee_s - ankle_s)
+    if ret:
+        landmarks_s['Calf'] = points
+        calf_len = np.linalg.norm(points[0] - points[1])
+
+    ankle_depth = 0.6*calf_len
+    ankle_0 = ankle_s + 0.5*ankle_depth*normalize(leg_hor_seg_s)
+    ankle_1 = ankle_s - 0.5*ankle_depth*normalize(leg_hor_seg_s)
+    landmarks_s['Ankle'] = np.vstack([ankle_0, ankle_1])
 
     return landmarks_s, armscye_ratio_s, bust_ratio_s, under_bust_ratio_s, crotch_ratio_s
 
@@ -1100,13 +1108,17 @@ def fix_silhouette(sil):
     sil = cv.morphologyEx(sil, cv.MORPH_OPEN, cv.getStructuringElement(cv.MORPH_RECT, ksize=(3,3)))
     return sil
 
+def height_pixel_ratio(height_world, height_points):
+    height_px = linalg.norm(height_points[0] - height_points[1])
+    return height_world/height_px
+
 def normalize_unit_to_height_unit(height, landmarks_f, landmarks_s):
-    height_points_f = landmarks_f['Height']
-    height_points_s = landmarks_s['Height']
-    height_px_f = linalg.norm(height_points_f[0] - height_points_f[1])
-    height_px_s = linalg.norm(height_points_s[0] - height_points_s[1])
-    ratio_f = height/height_px_f
-    ratio_s = height/height_px_s
+    #height_points_f = landmarks_f['Height']
+    #height_points_s = landmarks_s['Height']
+    #height_px_f = linalg.norm(height_points_f[0] - height_points_f[1])
+    #height_px_s = linalg.norm(height_points_s[0] - height_points_s[1])
+    ratio_f =  height_pixel_ratio(height, landmarks_f['Height']) #height/height_px_f
+    ratio_s =  height_pixel_ratio(height, landmarks_s['Height']) #height/height_px_s
 
     measure_f = {}
     for id, points in landmarks_f.items():
@@ -1123,6 +1135,17 @@ def normalize_unit_to_height_unit(height, landmarks_f, landmarks_s):
             measure_s[id] = -1
 
     return measure_f, measure_s
+
+def calc_segment_height_side_img(height, segments_s):
+    h_points = segments_s['Height']
+    bottom_h_point = h_points[0] if h_points[0][1] > h_points[1][1] else h_points[1]
+    h_px_ratio = height_pixel_ratio(height, segments_s['Height'])
+
+    segments_height = {}
+    for id, points in segments_s.items():
+        mid = 0.5 * (points[0] + points[1])
+        segments_height[id] = h_px_ratio*np.abs(mid[1] - bottom_h_point[1])
+    return segments_height
 
 #a: major len
 #b: minor len
@@ -1266,9 +1289,11 @@ def calc_body_landmarks_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_
     segment_dst_f, segment_dst_s = normalize_unit_to_height_unit(height, segments_f, segments_s)
 
     measurements = approximate_body_measurement_as_ellipse_perimeter(segment_dst_f, segment_dst_s)
+    segment_heights = calc_segment_height_side_img(height, segments_s)
 
     data = {'contour_f': contour_f, 'contour_s': contour_s,
             'landmark_segment_f' : segments_f, 'landmark_segment_s': segments_s,
+            'landmark_segment_height': segment_heights,
             'landmark_segment_dst_f': segment_dst_f, 'landmark_segment_dst_s': segment_dst_s,
             'measurement' : measurements}
 
