@@ -83,7 +83,7 @@ class DeeplabWrapper():
             config.gpu_options.allow_growth = True
             # for a gpu of 11 GB. choose 0.08 for PC model, 0.05 for a mobile model
             # TODO: initialize this value for each type of GPU
-            # config.gpu_options.per_process_gpu_memory_fraction = 0.4
+            config.gpu_options.per_process_gpu_memory_fraction = 0.5
             self.sess = tf.Session(graph=self.graph, config=config)
         else:
             config = tf.ConfigProto(device_count={'GPU': 0})
