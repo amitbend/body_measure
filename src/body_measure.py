@@ -1289,6 +1289,8 @@ def calc_body_landmarks_util(img_f, img_s, sil_f, sil_s, keypoints_f, keypoints_
     segment_dst_f, segment_dst_s = normalize_unit_to_height_unit(height, segments_f, segments_s)
 
     measurements = approximate_body_measurement_as_ellipse_perimeter(segment_dst_f, segment_dst_s)
+    measurements['Height'] = height
+
     segment_heights = calc_segment_height_side_img(height, segments_s)
 
     data = {'contour_f': contour_f, 'contour_s': contour_s,

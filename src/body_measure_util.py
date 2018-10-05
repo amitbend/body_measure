@@ -14,7 +14,7 @@ from src.util import preprocess_image
 
 class BodyMeasure():
     def __init__(self):
-        # use this option if you have a good GPU because tensorflow is very hungry for memory. it starts with 1GB and grows quickly to 10GB
+        # use this option if you have a good GPU because tensorflow is very hungry for memory. it starts with 1GB and grows quickly to an upper limit that is configued by us
         self.use_gpu = False
         #we need more checking to be able to use deeplab mobile version. its precision is not good now
         self.use_deeplab_mobile=False
@@ -99,7 +99,7 @@ if __name__ == '__main__':
     img_s = cv.imread(str(path_s))
 
     body_measure = BodyMeasure()
-    n_test = 10
+    n_test = 1
     for i in range(n_test):
         start = time.time()
         #data =  body_measure.process(img_f, img_s, height, is_viz_result=False)
@@ -113,4 +113,4 @@ if __name__ == '__main__':
         cv.imwrite(f'{OUT_DIR}/{path_f.stem}.jpg', img_viz)
         print(f'output debug result to: {OUT_DIR}/{path_f.stem}.jpg')
 
-    time.sleep(10000)
+    #time.sleep(10000)
