@@ -762,7 +762,7 @@ def estimate_landmark_side_segments(contour_s, keypoints_s):
     neck_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['Neck']][:2]
     midhip_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['MidHip']][:2]
 
-    #todo: it could go wrong here
+    #TODO: it could go wrong here, we assume that Hip, Knee, Ankle are available together. this assumption is unsafe
     if is_valid_keypoint_1(keypoints_s, 'LHip') and is_valid_keypoint_1(keypoints_s, 'LKnee') and is_valid_keypoint_1(keypoints_s, 'LAnkle'):
         hip_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['LHip']][:2]
         knee_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['LKnee']][:2]
@@ -772,11 +772,40 @@ def estimate_landmark_side_segments(contour_s, keypoints_s):
         knee_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['RKnee']][:2]
         ankle_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['RAnkle']][:2]
 
+    if is_valid_keypoint_1(keypoints_s, 'LEar'):
+        ear_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['LEar']][:2]
+    elif is_valid_keypoint_1(keypoints_s, 'REar'):
+        ear_s = keypoints_s[POSE_BODY_25_BODY_PART_IDXS['REar']][:2]
+    else:
+        ear_s = neck_s - 0.3*linalg.norm(neck_s-midhip_s)*np.array([0, 1])
+        print('both left ear and right ear landmarks are not available. Resort to a rough estimation', file=sys.stderr)
+
     torso_hor_seg_s = linalg.norm(neck_s - midhip_s)*np.array([1,0])
     leg_hor_seg_s = linalg.norm(knee_s - hip_s)*np.array([1,0])
 
     points = estimate_side_height(contour_s, keypoints_s)
     landmarks_s['Height'] = points
+
+    #neck
+    neck = neck_s + 0.4*(ear_s - neck_s)
+    is_ok, points = calc_contour_slice(contour_str_s, neck, torso_hor_seg_s)
+    if is_ok:
+        landmarks_s['Neck'] = points
+    else:
+        neck_len = linalg.norm(ear_s - neck_s)
+        ext_seg = 0.25*neck_len*normalize(torso_hor_seg_s)
+        landmarks_s['Neck'] = np.vstack([neck+ext_seg, neck-ext_seg])
+
+    #collar
+    collar = neck_s + 0.2 * (ear_s - neck_s)
+    is_ok, points = calc_contour_slice(contour_str_s, collar, torso_hor_seg_s)
+    if is_ok:
+        landmarks_s['Collar'] = points
+    else:
+        neck_len = linalg.norm(ear_s - neck_s)
+        ext_seg = 0.25 * neck_len * normalize(torso_hor_seg_s)
+        landmarks_s['Collar'] = np.vstack([collar + ext_seg, collar - ext_seg])
+
 
     is_ok, points, shoulder_pos_s = estimate_side_shoulder(contour_str_s, keypoints_s)
     if is_ok: landmarks_s['Shoulder'] = points
@@ -1155,12 +1184,14 @@ def ellipse_perimeter(a, b):
 def approximate_body_measurement_as_ellipse_perimeter(measure_f, measure_s):
     measurements = {}
 
+    #TODO: neck depth is not exact in the side image, approximate neck as a circle
     val = -1
     if measure_f['Neck'] != -1:
         neck_w = measure_f['Neck']
         val = ellipse_perimeter(neck_w, neck_w)
     measurements['Neck_Circumference'] = val
 
+    #TODO: collar depth is not exact in the side image, approxiamte collar depth as depth with in front image
     val = -1
     if  measure_f['Collar'] != -1 and measure_f['Neck'] != -1:
         val = ellipse_perimeter(measure_f['Collar'], measure_f['Neck'])
